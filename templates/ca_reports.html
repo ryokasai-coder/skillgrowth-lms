@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block title %}受講レポート{% endblock %}
+{% block page_title %}受講レポート{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="mb-0">受講状況一覧（{{ enrollments | length }}件）</h5>
+</div>
+
+{% if enrollments %}
+<div class="card">
+  <table class="table table-hover mb-0">
+    <thead class="table-light">
+      <tr>
+        <th>受講者</th>
+        <th>コース名</th>
+        <th>ステータス</th>
+        <th>視聴時間</th>
+        <th>開始日</th>
+        <th>修了日</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for enrollment, user, course in enrollments %}
+      <tr>
+        <td>
+          <strong>{{ user.full_name or user.username }}</strong><br>
+          <small class="text-muted">{{ user.department or '' }}</small>
+        </td>
+        <td>
+          {{ course.title }}<br>
+          <small class="text-muted">{{ course.category or '' }}</small>
+        </td>
+        <td>
+          {% if enrollment.status == 'completed' %}
+          <span class="badge bg-success">修了</span>
+          {% elif enrollment.status == 'in_progress' %}
+          <span class="badge bg-primary">受講中</span>
+          {% else %}
+          <span class="badge bg-secondary">未開始</span>
+          {% endif %}
+        </td>
+        <td>
+          {% set h = (enrollment.total_study_seconds or 0) // 3600 %}
+          {% set m = ((enrollment.total_study_seconds or 0) % 3600) // 60 %}
+          {% if h > 0 %}{{ h }}時間{{ m }}分{% else %}{{ m }}分{% endif %}
+        </td>
+        <td>{{ enrollment.started_at.strftime('%Y/%m/%d') if enrollment.started_at else '-' }}</td>
+        <td>{{ enrollment.completed_at.strftime('%Y/%m/%d') if enrollment.completed_at else '-' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="alert alert-info">受講データがありません。</div>
+{% endif %}
+{% endblock %}

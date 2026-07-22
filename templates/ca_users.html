@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block title %}受講者管理{% endblock %}
+{% block page_title %}受講者管理{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="mb-0">受講者一覧（{{ users | length }}名）</h5>
+  <a href="{{ url_for('ca_new_user') }}" class="btn btn-primary btn-sm">
+    <i class="bi bi-person-plus me-1"></i>受講者を登録
+  </a>
+</div>
+
+{% if users %}
+<div class="card">
+  <table class="table table-hover mb-0">
+    <thead class="table-light">
+      <tr>
+        <th>氏名</th><th>社員番号</th><th>部署</th><th>雇用形態</th>
+        <th>入社日</th><th>受講数</th><th>修了数</th><th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for user in users %}
+      {% set completed = user.enrollments | selectattr('status', 'equalto', 'completed') | list | length %}
+      <tr>
+        <td>
+          <strong>{{ user.full_name or user.username }}</strong><br>
+          <small class="text-muted">{{ user.email }}</small>
+        </td>
+        <td>{{ user.employee_id or '-' }}</td>
+        <td>{{ user.department or '-' }}</td>
+        <td>{{ user.employment_type or '-' }}</td>
+        <td>{{ user.hire_date.strftime('%Y/%m/%d') if user.hire_date else '-' }}</td>
+        <td>{{ user.enrollments | length }}</td>
+        <td>{{ completed }}</td>
+        <td>
+          <a href="{{ url_for('ca_edit_user', user_id=user.id) }}"
+             class="btn btn-sm btn-outline-primary">編集</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-body text-center text-muted py-5">
+    <i class="bi bi-people" style="font-size:2rem"></i>
+    <p class="mt-2">受講者が登録されていません。</p>
+    <a href="{{ url_for('ca_new_user') }}" class="btn btn-primary">
+      <i class="bi bi-person-plus me-1"></i>受講者を登録
+    </a>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

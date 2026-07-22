@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+{% block title %}受講管理{% endblock %}
+{% block page_title %}受講管理{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-clipboard-plus me-2"></i>受講を割り当てる
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('add_enrollment') }}">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">受講者</label>
+            <select name="user_id" class="form-select" required>
+              <option value="">-- 選択 --</option>
+              {% for user in users %}
+              <option value="{{ user.id }}">{{ user.full_name or user.username }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">コース</label>
+            <select name="course_id" class="form-select" required>
+              <option value="">-- 選択 --</option>
+              {% for course in courses %}
+              <option value="{{ course.id }}">{{ course.title }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-plus-circle me-1"></i>受講登録
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-8">
+    <div class="card">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-list-check me-2"></i>受講一覧（{{ enrollments | length }}件）
+      </div>
+      <div class="card-body p-0">
+        {% if enrollments %}
+        <table class="table table-sm table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>受講者</th><th>コース</th><th>登録日</th>
+              <th>学習時間</th><th>テスト</th><th>状況</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for enrollment, user, course in enrollments %}
+            <tr>
+              <td>
+                <small>{{ user.full_name or user.username }}</small><br>
+                <small class="text-muted">{{ user.department or '' }}</small>
+              </td>
+              <td><small>{{ course.title }}</small></td>
+              <td><small>{{ enrollment.enrolled_at.strftime('%Y/%m/%d') }}</small></td>
+              <td><small>{{ (enrollment.total_study_minutes / 60) | round(1) }}h</small></td>
+              <td>
+                <small>{% if enrollment.quiz_score is not none %}{{ enrollment.quiz_score }}点{% else %}-{% endif %}</small>
+              </td>
+              <td>
+                {% if enrollment.status == 'completed' %}
+                <span class="badge badge-completed">修了</span>
+                {% elif enrollment.status == 'in_progress' %}
+                <span class="badge badge-in-progress">受講中</span>
+                {% else %}
+                <span class="badge badge-enrolled">未開始</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="text-center text-muted py-4">受講登録がありません</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

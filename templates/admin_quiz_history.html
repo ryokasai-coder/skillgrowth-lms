@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% block title %}テスト解答履歴{% endblock %}
+{% block page_title %}テスト解答履歴: {{ course.title }}{% endblock %}
+
+{% block content %}
+<div class="d-flex gap-2 mb-3">
+  <a href="{{ url_for('edit_course', course_id=course.id) }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>コース編集
+  </a>
+  <a href="{{ url_for('course_report', course_id=course.id) }}" class="btn btn-outline-info btn-sm">
+    <i class="bi bi-file-earmark-text me-1"></i>受講実績
+  </a>
+</div>
+
+{% if quiz and attempts %}
+<div class="card mb-3">
+  <div class="card-header bg-white fw-semibold">
+    <i class="bi bi-clock-history me-2"></i>解答履歴一覧（{{ attempts | length }}件）
+    <span class="text-muted small ms-2">全受験の履歴を保存しています</span>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-sm table-hover mb-0" style="font-size:.85rem">
+      <thead class="table-light">
+        <tr>
+          <th>受験日時</th>
+          <th>氏名</th>
+          <th>社員番号</th>
+          <th>得点</th>
+          <th>合否</th>
+          <th>IPアドレス</th>
+          <th>解答詳細</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for attempt, user in attempts %}
+        {% set answers = attempt.answers_json | fromjson if attempt.answers_json else {} %}
+        <tr>
+          <td>{{ attempt.attempted_at.strftime('%Y/%m/%d %H:%M:%S') }}</td>
+          <td>{{ user.full_name or user.username }}</td>
+          <td>{{ user.employee_id or '-' }}</td>
+          <td>
+            <strong class="{% if attempt.score >= course.pass_score %}text-success{% else %}text-danger{% endif %}">
+              {{ attempt.score }}点
+            </strong>
+          </td>
+          <td>
+            {% if attempt.score >= course.pass_score %}
+            <span class="badge bg-success">合格</span>
+            {% else %}
+            <span class="badge bg-danger">不合格</span>
+            {% endif %}
+          </td>
+          <td class="text-muted">{{ attempt.ip_address or '-' }}</td>
+          <td>
+            <button class="btn btn-xs btn-outline-secondary btn-sm"
+                    type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#detail-{{ attempt.id }}">
+              詳細
+            </button>
+          </td>
+        </tr>
+        <tr class="collapse" id="detail-{{ attempt.id }}">
+          <td colspan="7" class="bg-light">
+            <div class="p-2 small">
+              {% for question in quiz.questions %}
+              {% set ans = answers.get(question.id | string, '-') %}
+              <div class="mb-1">
+                <strong>Q{{ loop.index }}.</strong> {{ question.question_text | truncate(60) }}
+                → 回答: <strong>{{ ans }}</strong>
+                {% if ans == question.correct_answer %}
+                <i class="bi bi-check-circle-fill text-success ms-1"></i>
+                {% else %}
+                <i class="bi bi-x-circle-fill text-danger ms-1"></i>（正解: {{ question.correct_answer }}）
+                {% endif %}
+              </div>
+              {% endfor %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% elif not quiz %}
+<div class="alert alert-info">このコースにはテストが設定されていません。</div>
+{% else %}
+<div class="alert alert-secondary">受験履歴がありません。</div>
+{% endif %}
+{% endblock %}

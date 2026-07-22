@@ -1,0 +1,447 @@
+{% extends 'base.html' %}
+{% block title %}{{ course.title }}{% endblock %}
+{% block page_title %}{{ course.title }}{% endblock %}
+
+{% block head %}
+<style>
+  .lesson-nav .list-group-item { font-size:.875rem; }
+  .lesson-nav .active-lesson { background:#dbeafe; border-color:#93c5fd; }
+  .lesson-nav .locked-lesson { color:#94a3b8; cursor:not-allowed; pointer-events:none; }
+  .completed-icon { color:#16a34a; }
+  .video-wrapper { position:relative; padding-bottom:56.25%; height:0; overflow:hidden; background:#000; border-radius:6px; }
+  .video-wrapper > div { position:absolute; top:0; left:0; width:100%; height:100%; }
+  /* チャンネル登録・シェアなどの余計なUIをブロック */
+  .yt-top-guard {
+    position:absolute; top:0; left:0; right:0; height:65px;
+    z-index:5; background:transparent; pointer-events:all;
+  }
+  .content-area { min-height:260px; }
+  #system-notice {
+    display:none; position:fixed; top:70px; left:50%; transform:translateX(-50%);
+    z-index:9999; min-width:320px; text-align:center;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- システム通知（速度制限・タブ切り替え等） -->
+<div id="system-notice" class="alert alert-warning shadow py-2 px-4 small"></div>
+
+<div class="row g-3">
+  <!-- サイドバー -->
+  <div class="col-md-3">
+    <div class="card">
+      <div class="card-header bg-white fw-semibold small">コンテンツ</div>
+      <div class="list-group list-group-flush lesson-nav">
+        {% for lesson in course.lessons %}
+        {% set is_done = lesson.id in completed_lesson_ids %}
+        {% set is_current = current_lesson and current_lesson.id == lesson.id %}
+
+        <a href="{{ url_for('study_course', course_id=course.id, lesson_id=lesson.id) }}"
+           class="list-group-item list-group-item-action d-flex align-items-center gap-2
+                  {% if is_current %}active-lesson{% endif %}">
+          {% if is_done %}
+          <i class="bi bi-check-circle-fill completed-icon flex-shrink-0"></i>
+          {% else %}
+          <i class="bi bi-play-circle text-primary flex-shrink-0"></i>
+          {% endif %}
+          <span class="text-truncate">{{ loop.index }}. {{ lesson.title }}</span>
+          {% set ds = lesson.duration_seconds or lesson.duration_minutes * 60 %}
+          <span class="ms-auto text-muted small" style="white-space:nowrap">{{ ds // 60 }}分{{ ds % 60 }}秒</span>
+        </a>
+        {% endfor %}
+
+        {% if all_lessons_completed and quiz %}
+        <a href="#quiz"
+           class="list-group-item list-group-item-action d-flex align-items-center gap-2 small bg-warning-subtle">
+          <i class="bi bi-patch-question-fill text-warning flex-shrink-0"></i>
+          <span>理解度テスト</span>
+          {% if enrollment.quiz_score is not none %}
+          <span class="ms-auto badge bg-secondary">{{ enrollment.quiz_score }}点</span>
+          {% endif %}
+        </a>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-body small">
+        <div class="fw-semibold mb-2">受講状況</div>
+        {% set total_l = course.lessons | length %}
+        {% set done_l = completed_lesson_ids | length %}
+        {% if total_l > 0 %}
+        {% set pct = (done_l / total_l * 100) | int %}
+        <div class="progress mb-1" style="height:6px">
+          <div class="progress-bar progress-bar-lms" id="progress-bar" style="width:{{ pct }}%"></div>
+        </div>
+        <div class="text-muted">{{ done_l }}/{{ total_l }} レッスン完了</div>
+        {% endif %}
+        {% set ts0 = enrollment.total_study_seconds or 0 %}
+        {% set th0 = ts0 // 3600 %}{% set tm0 = (ts0 % 3600) // 60 %}{% set ts0s = ts0 % 60 %}
+        <div class="text-muted mt-1" id="total-time-wrap">
+          実視聴時間: <span id="total-time-h">{{ th0 }}</span>時間<span id="total-time-m">{{ tm0 }}</span>分<span id="total-time-s">{{ ts0s }}</span>秒
+        </div>
+        {% if enrollment.quiz_score is not none %}
+        <div class="text-muted">テスト最高点: {{ enrollment.quiz_score }}点</div>
+        {% endif %}
+        {% if enrollment.status == 'completed' %}
+        <div class="mt-2">
+          <a href="{{ url_for('download_certificate', course_id=course.id) }}"
+             class="btn btn-success btn-sm w-100">
+            <i class="bi bi-award me-1"></i>修了証をDL
+          </a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- メインコンテンツ -->
+  <div class="col-md-9">
+    {% if current_lesson %}
+    <div class="card">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">{{ current_lesson.title }}</h6>
+        <div class="d-flex align-items-center gap-2">
+          {% if current_lesson.video_url %}
+          <span class="badge bg-info-subtle text-info small">
+            <i class="bi bi-shield-check me-1"></i>シーク制限・速度制限・タブ監視 有効
+          </span>
+          {% endif %}
+          {% set cds = current_lesson.duration_seconds or current_lesson.duration_minutes * 60 %}
+          <span class="small text-muted">{{ cds // 60 }}分{{ cds % 60 }}秒</span>
+        </div>
+      </div>
+      <div class="card-body content-area">
+        {% if current_lesson.video_url %}
+        <div class="video-wrapper mb-3">
+          <div id="yt-player"></div>
+          <div class="yt-top-guard" title=""></div>
+        </div>
+        {% if current_lesson.id not in completed_lesson_ids %}
+        <div class="alert alert-info small py-2 mb-3" id="watch-notice">
+          <i class="bi bi-play-circle me-1"></i>
+          動画を最後まで視聴するとレッスンが自動完了します。
+          シーク（早送り）・1.5倍速超・タブ切り替えは制限されます。
+        </div>
+        {% endif %}
+        {% endif %}
+
+        {% if current_lesson.content %}
+        <div class="lesson-content" style="white-space:pre-wrap; line-height:1.8;">{{ current_lesson.content }}</div>
+        {% endif %}
+      </div>
+      <div class="card-footer bg-white d-flex justify-content-between align-items-center">
+        <div class="small text-muted" id="complete-status">
+          {% if current_lesson.id in completed_lesson_ids %}
+          <i class="bi bi-check-circle-fill text-success me-1"></i>完了済み
+          {% endif %}
+        </div>
+        {% if not current_lesson.video_url %}
+        <button id="completeBtn" class="btn btn-primary btn-sm"
+                data-course="{{ course.id }}" data-lesson="{{ current_lesson.id }}"
+                {% if current_lesson.id in completed_lesson_ids %}disabled{% endif %}>
+          <i class="bi bi-check2 me-1"></i>
+          {% if current_lesson.id in completed_lesson_ids %}完了済み{% else %}このレッスンを完了する{% endif %}
+        </button>
+        {% else %}
+        <button id="completeBtn" class="btn btn-secondary btn-sm" disabled
+                data-course="{{ course.id }}" data-lesson="{{ current_lesson.id }}">
+          {% if current_lesson.id in completed_lesson_ids %}
+          <i class="bi bi-check-circle-fill me-1"></i>完了済み
+          {% else %}
+          <i class="bi bi-hourglass me-1"></i>動画視聴後に自動完了
+          {% endif %}
+        </button>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- 修了証ダウンロードエリア -->
+    <div class="card mt-3" id="cert-card">
+      <div class="card-header bg-white fw-semibold small">
+        <i class="bi bi-award-fill text-warning me-1"></i>修了証
+      </div>
+      <div class="card-body d-flex flex-column gap-2">
+
+        <!-- 動画別修了証 -->
+        {% if current_lesson %}
+        {% if current_lesson.id in completed_lesson_ids %}
+        <a id="cert-lesson-btn"
+           href="{{ url_for('lesson_certificate', course_id=course.id, lesson_id=current_lesson.id) }}"
+           class="btn btn-outline-success btn-sm text-start">
+          <i class="bi bi-file-earmark-pdf me-1"></i>
+          動画別修了証：{{ current_lesson.title }}
+        </a>
+        {% else %}
+        <button id="cert-lesson-btn" class="btn btn-outline-secondary btn-sm text-start" disabled>
+          <i class="bi bi-file-earmark-pdf me-1"></i>
+          動画別修了証：視聴完了後にダウンロード可
+        </button>
+        {% endif %}
+        {% endif %}
+
+        <!-- コース別修了証 -->
+        {% if all_lessons_completed %}
+        <a href="{{ url_for('course_certificate', course_id=course.id) }}"
+           class="btn btn-outline-success btn-sm text-start">
+          <i class="bi bi-file-earmark-pdf me-1"></i>
+          コース別修了証：{{ course.title }}
+        </a>
+        {% else %}
+        <button class="btn btn-outline-secondary btn-sm text-start" disabled>
+          <i class="bi bi-file-earmark-pdf me-1"></i>
+          コース別修了証：全レッスン完了後にダウンロード可
+        </button>
+        {% endif %}
+
+        <!-- カリキュラム別修了証 -->
+        {% if curriculum_completed %}
+        <a href="{{ url_for('curriculum_certificate', course_id=course.id) }}"
+           class="btn btn-success btn-sm text-start">
+          <i class="bi bi-award-fill me-1"></i>
+          カリキュラム別修了証：{{ course.category }}
+        </a>
+        {% else %}
+        <button class="btn btn-outline-secondary btn-sm text-start" disabled>
+          <i class="bi bi-award-fill me-1"></i>
+          カリキュラム別修了証：全コース完了後にダウンロード可
+        </button>
+        {% endif %}
+
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if current_lesson and current_lesson.video_url %}
+<script>
+const COURSE_ID    = {{ course.id }};
+const LESSON_ID    = {{ current_lesson.id }};
+const ALREADY_DONE = {{ 'true' if current_lesson.id in completed_lesson_ids else 'false' }};
+const RESUME_SEC   = {{ resume_seconds }};
+let VIDEO_ID = '';
+
+let player;
+let maxWatched   = RESUME_SEC;
+let watchSeconds = 0;
+let heartbeatTimer = null;
+let seekPollTimer  = null;
+let speedPollTimer = null;
+let inactivityTimer = null;
+const INACTIVITY_MS  = 5 * 60 * 1000;
+const HEARTBEAT_SEC  = 5;
+const MAX_SPEED      = 1.5;
+const SEEK_TOLERANCE = 3;
+
+// 動画IDをAPIから取得してからYouTube IFrame APIを読み込む
+fetch(`/courses/${COURSE_ID}/lessons/${LESSON_ID}/video_token`)
+  .then(r => r.json())
+  .then(data => {
+    VIDEO_ID = data.video_id;
+    if (!VIDEO_ID) return;
+    const tag = document.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    document.head.appendChild(tag);
+  });
+
+function showNotice(msg) {
+  const el = document.getElementById('system-notice');
+  el.textContent = msg;
+  el.style.display = 'block';
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+// ===== YouTube プレイヤー初期化 =====
+function onYouTubeIframeAPIReady() {
+  player = new YT.Player('yt-player', {
+    videoId: VIDEO_ID,
+    playerVars: { rel: 0, modestbranding: 1, iv_load_policy: 3, disablekb: 0, fs: 1 },
+    events: {
+      onReady: onPlayerReady,
+      onStateChange: onPlayerStateChange
+    }
+  });
+}
+
+function onPlayerReady() {
+  // 実際の動画時間をDBに保存
+  const dur = Math.floor(player.getDuration());
+  if (dur > 0) {
+    fetch(`/courses/${COURSE_ID}/lessons/${LESSON_ID}/set_duration`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ duration_seconds: dur })
+    });
+  }
+  if (RESUME_SEC > 0) {
+    player.seekTo(RESUME_SEC, true);
+    showNotice(`前回の視聴位置（${Math.floor(RESUME_SEC/60)}分${RESUME_SEC%60}秒）から再開しました`);
+  }
+  startSpeedPoll();
+}
+
+function onPlayerStateChange(event) {
+  if (event.data === YT.PlayerState.PLAYING) {
+    startHeartbeat();
+    startSeekPoll();
+    resetInactivity();
+  } else {
+    stopHeartbeat();
+    stopSeekPoll();
+    if (event.data === YT.PlayerState.ENDED && !ALREADY_DONE) {
+      sendComplete(Math.floor(player.getDuration()));
+    }
+  }
+}
+
+// ===== ハートビート（5秒ごと）=====
+function startHeartbeat() {
+  if (heartbeatTimer) return;
+  heartbeatTimer = setInterval(() => {
+    watchSeconds += HEARTBEAT_SEC;
+    const pos = Math.floor(player.getCurrentTime());
+    fetch(`/courses/${COURSE_ID}/lessons/${LESSON_ID}/heartbeat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ position_seconds: pos })
+    }).then(r => r.json()).then(d => {
+      if (d.ok) updateTimeDisplay();
+    });
+  }, HEARTBEAT_SEC * 1000);
+}
+
+function stopHeartbeat() {
+  clearInterval(heartbeatTimer);
+  heartbeatTimer = null;
+}
+
+function updateTimeDisplay() {
+  const hEl = document.getElementById('total-time-h');
+  const mEl = document.getElementById('total-time-m');
+  const sEl = document.getElementById('total-time-s');
+  if (!hEl || !mEl || !sEl) return;
+  let total = (parseInt(hEl.textContent)||0)*3600 + (parseInt(mEl.textContent)||0)*60 + (parseInt(sEl.textContent)||0) + HEARTBEAT_SEC;
+  hEl.textContent = Math.floor(total / 3600);
+  mEl.textContent = Math.floor((total % 3600) / 60);
+  sEl.textContent = total % 60;
+}
+
+// ===== シーク制限（500msポーリング）=====
+function startSeekPoll() {
+  if (seekPollTimer) return;
+  seekPollTimer = setInterval(() => {
+    if (!player || player.getPlayerState() !== YT.PlayerState.PLAYING) return;
+    const cur = player.getCurrentTime();
+    if (cur > maxWatched + SEEK_TOLERANCE) {
+      // 未視聴区間へのスキップを検知 → 巻き戻し
+      player.seekTo(maxWatched, true);
+      showNotice('未視聴区間のスキップはできません。最後まで視聴してください。');
+    } else if (cur > maxWatched) {
+      maxWatched = cur;
+    }
+  }, 500);
+}
+
+function stopSeekPoll() {
+  clearInterval(seekPollTimer);
+  seekPollTimer = null;
+}
+
+// ===== 速度制限（1秒ポーリング）=====
+function startSpeedPoll() {
+  speedPollTimer = setInterval(() => {
+    if (!player) return;
+    const rate = player.getPlaybackRate();
+    if (rate > MAX_SPEED) {
+      player.setPlaybackRate(1.0);
+      showNotice(`再生速度は${MAX_SPEED}倍速までです。通常速度に戻しました。`);
+    }
+  }, 1000);
+}
+
+// ===== タブ切り替え監視 =====
+document.addEventListener('visibilitychange', () => {
+  if (!player || ALREADY_DONE) return;
+  if (document.hidden && player.getPlayerState() === YT.PlayerState.PLAYING) {
+    player.pauseVideo();
+    showNotice('タブを切り替えたため動画を一時停止しました。このタブに戻って再開してください。');
+  }
+});
+
+// ===== 無操作タイムアウト（5分）=====
+function resetInactivity() {
+  clearTimeout(inactivityTimer);
+  inactivityTimer = setTimeout(() => {
+    if (player && player.getPlayerState() === YT.PlayerState.PLAYING) {
+      player.pauseVideo();
+      showNotice('5分間操作がなかったため動画を一時停止しました。');
+    }
+  }, INACTIVITY_MS);
+}
+
+['mousemove', 'click', 'keydown', 'scroll', 'touchstart'].forEach(ev => {
+  document.addEventListener(ev, resetInactivity, { passive: true });
+});
+
+// ===== レッスン完了送信 =====
+function sendComplete(totalWatchSec) {
+  const btn = document.getElementById('completeBtn');
+  if (btn) {
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>記録中...';
+  }
+  fetch(`/courses/${COURSE_ID}/lessons/${LESSON_ID}/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ watch_seconds: totalWatchSec })
+  })
+  .then(r => r.json())
+  .then(() => {
+    if (btn) {
+      btn.className = 'btn btn-success btn-sm';
+      btn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>完了済み';
+    }
+    document.getElementById('watch-notice')?.remove();
+    document.getElementById('complete-status').innerHTML =
+      '<i class="bi bi-check-circle-fill text-success me-1"></i>完了済み';
+    // 動画別修了証ボタンを有効化
+    const certBtn = document.getElementById('cert-lesson-btn');
+    if (certBtn && certBtn.tagName === 'BUTTON') {
+      const a = document.createElement('a');
+      a.id = 'cert-lesson-btn';
+      a.href = `/courses/${COURSE_ID}/lessons/${LESSON_ID}/certificate`;
+      a.className = certBtn.className.replace('btn-outline-secondary', 'btn-outline-success');
+      a.innerHTML = certBtn.innerHTML.replace('視聴完了後にダウンロード可', `動画別修了証`);
+      certBtn.replaceWith(a);
+    }
+    setTimeout(() => location.reload(), 1200);
+  });
+}
+</script>
+{% else %}
+{# 動画なし：手動完了ボタン #}
+<script>
+document.getElementById('completeBtn')?.addEventListener('click', function () {
+  const courseId = this.dataset.course;
+  const lessonId = this.dataset.lesson;
+  this.disabled = true;
+  this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>処理中...';
+  fetch(`/courses/${courseId}/lessons/${lessonId}/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ watch_seconds: 0 })
+  })
+  .then(r => r.json())
+  .then(() => {
+    this.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>完了済み';
+    this.className = 'btn btn-success btn-sm';
+    setTimeout(() => location.reload(), 800);
+  });
+});
+</script>
+{% endif %}
+{% endblock %}

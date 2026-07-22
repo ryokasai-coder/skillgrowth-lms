@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block title %}{% if user %}受講者編集{% else %}受講者登録{% endif %}{% endblock %}
+{% block page_title %}{% if user %}受講者情報編集{% else %}受講者新規登録{% endif %}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-7">
+    <div class="card">
+      <div class="card-body">
+        <form method="POST">
+          {% if not user %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">ユーザー名 <span class="text-danger">*</span></label>
+            <input type="text" name="username" class="form-control" required>
+            <div class="form-text">ログイン時に使用します</div>
+          </div>
+          {% endif %}
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">氏名 <span class="text-danger">*</span></label>
+              <input type="text" name="full_name" class="form-control"
+                     value="{{ user.full_name if user else '' }}" required>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">メールアドレス</label>
+              <input type="email" name="email" class="form-control"
+                     value="{{ user.email if user else '' }}">
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">社員番号</label>
+              <input type="text" name="employee_id" class="form-control"
+                     value="{{ user.employee_id if user else '' }}">
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">部署</label>
+              <input type="text" name="department" class="form-control"
+                     value="{{ user.department if user else '' }}">
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">雇用形態</label>
+              <select name="employment_type" class="form-select">
+                <option value="">-- 選択 --</option>
+                <option value="正社員" {% if user and user.employment_type == '正社員' %}selected{% endif %}>正社員</option>
+                <option value="契約社員" {% if user and user.employment_type == '契約社員' %}selected{% endif %}>契約社員</option>
+                <option value="パートタイム" {% if user and user.employment_type == 'パートタイム' %}selected{% endif %}>パートタイム</option>
+                <option value="有期雇用労働者" {% if user and user.employment_type == '有期雇用労働者' %}selected{% endif %}>有期雇用労働者</option>
+              </select>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">入社日</label>
+              <input type="date" name="hire_date" class="form-control"
+                     value="{{ user.hire_date.strftime('%Y-%m-%d') if user and user.hire_date else '' }}">
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">
+              パスワード {% if not user %}<span class="text-danger">*</span>{% else %}<span class="text-muted small">（変更する場合のみ入力）</span>{% endif %}
+            </label>
+            <input type="password" name="password" class="form-control"
+                   {% if not user %}required{% endif %}>
+          </div>
+          <div class="mb-3 form-check">
+            <input type="checkbox" name="force_pw" class="form-check-input" id="forcePw"
+                   {% if user and user.force_password_change %}checked{% endif %}>
+            <label class="form-check-label" for="forcePw">
+              次回ログイン時にパスワード変更を強制する
+            </label>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-save me-1"></i>{% if user %}更新{% else %}登録{% endif %}
+            </button>
+            <a href="{{ url_for('ca_users') }}" class="btn btn-outline-secondary">戻る</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

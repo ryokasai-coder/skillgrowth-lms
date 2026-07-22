@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block title %}テスト結果{% endblock %}
+{% block page_title %}テスト結果{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <div class="card text-center">
+      <div class="card-body py-5">
+        <div class="mb-3">
+          {% if score >= course.pass_score %}
+          <i class="bi bi-patch-check-fill text-success" style="font-size:4rem"></i>
+          {% else %}
+          <i class="bi bi-x-circle-fill text-danger" style="font-size:4rem"></i>
+          {% endif %}
+        </div>
+        <h4>{{ score }}点</h4>
+        <p class="text-muted">{{ correct }}問 / {{ total }}問 正解</p>
+        <p class="text-muted small">合格点: {{ course.pass_score }}点</p>
+
+        {% if score >= course.pass_score %}
+        <div class="alert alert-success">
+          <i class="bi bi-trophy-fill me-2"></i>
+          合格です！{% if enrollment.status == 'completed' %}コースが修了しました。{% endif %}
+        </div>
+        {% if enrollment.status == 'completed' %}
+        <a href="{{ url_for('download_certificate', course_id=course.id) }}"
+           class="btn btn-success mb-2">
+          <i class="bi bi-award me-1"></i>修了証をダウンロード
+        </a><br>
+        {% endif %}
+        {% else %}
+        <div class="alert alert-warning">
+          <i class="bi bi-arrow-repeat me-2"></i>
+          不合格です。再度テストを受験してください。
+        </div>
+        {% endif %}
+
+        <a href="{{ url_for('study_course', course_id=course.id) }}"
+           class="btn btn-outline-primary mt-2">
+          <i class="bi bi-arrow-left me-1"></i>コースに戻る
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

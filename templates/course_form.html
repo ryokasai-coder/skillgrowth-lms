@@ -1,0 +1,115 @@
+{% extends 'base.html' %}
+{% block title %}{% if course %}コース編集{% else %}コース作成{% endif %}{% endblock %}
+{% block page_title %}{% if course %}コース編集: {{ course.title }}{% else %}新規コース作成{% endif %}{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <div class="col-md-7">
+    <div class="card">
+      <div class="card-header bg-white fw-semibold">基本情報</div>
+      <div class="card-body">
+        <form method="POST">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">コース名 <span class="text-danger">*</span></label>
+            <input type="text" name="title" class="form-control"
+                   value="{{ course.title if course else '' }}" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">説明</label>
+            <textarea name="description" class="form-control" rows="3">{{ course.description if course else '' }}</textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">カリキュラム名</label>
+            <input type="text" name="category" class="form-control"
+                   value="{{ course.category if course else '' }}" placeholder="例：デジタルマーケティング研修">
+          </div>
+          {% if course %}
+          <div class="mb-3 form-check">
+            <input type="checkbox" name="is_published" class="form-check-input" id="isPublished"
+                   {% if course.is_published %}checked{% endif %}>
+            <label class="form-check-label" for="isPublished">受講者に公開する</label>
+          </div>
+          {% endif %}
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-save me-1"></i>{% if course %}更新{% else %}作成{% endif %}
+            </button>
+            <a href="{{ url_for('admin_courses') }}" class="btn btn-outline-secondary">戻る</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {% if course %}
+  <div class="col-md-5">
+    <div class="card mb-3">
+      <div class="card-header bg-white fw-semibold d-flex justify-content-between">
+        <span><i class="bi bi-list-ul me-2"></i>レッスン一覧（{{ course.lessons | length }}件）</span>
+      </div>
+      <div class="card-body p-0">
+        {% if course.lessons %}
+        <ul class="list-group list-group-flush">
+          {% for lesson in course.lessons %}
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <div>
+              <span class="badge bg-secondary me-2">{{ loop.index }}</span>
+              <span>{{ lesson.title }}</span>
+              <small class="text-muted ms-2">{{ lesson.duration_minutes }}分</small>
+            </div>
+            <form method="POST" action="{{ url_for('delete_lesson', lesson_id=lesson.id) }}"
+                  onsubmit="return confirm('削除しますか？')">
+              <button type="submit" class="btn btn-sm btn-outline-danger btn-xs">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="text-center text-muted py-3 small">レッスンがありません</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-plus-circle me-2"></i>レッスンを追加
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('add_lesson', course_id=course.id) }}">
+          <div class="mb-2">
+            <input type="text" name="title" class="form-control form-control-sm"
+                   placeholder="レッスンタイトル *" required>
+          </div>
+          <div class="mb-2">
+            <textarea name="content" class="form-control form-control-sm" rows="3"
+                      placeholder="レッスン内容（テキスト）"></textarea>
+          </div>
+          <div class="mb-2">
+            <input type="url" name="video_url" class="form-control form-control-sm"
+                   placeholder="動画URL（YouTube等）">
+          </div>
+          <div class="mb-3">
+            <input type="number" name="duration_minutes" class="form-control form-control-sm"
+                   placeholder="所要時間（分）" min="0" value="30">
+          </div>
+          <button type="submit" class="btn btn-success btn-sm w-100">
+            <i class="bi bi-plus me-1"></i>レッスン追加
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div class="d-grid gap-2 mt-3">
+      <a href="{{ url_for('manage_quiz', course_id=course.id) }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-patch-question me-1"></i>理解度テストを管理
+      </a>
+      <a href="{{ url_for('course_report', course_id=course.id) }}" class="btn btn-outline-info btn-sm">
+        <i class="bi bi-file-earmark-text me-1"></i>受講実績を見る
+      </a>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

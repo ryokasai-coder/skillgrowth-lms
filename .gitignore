@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+venv/
+.env
+.env.*
+# 受講者の個人データを含むDBは絶対にコミットしない
+instance/
+*.db
+*.sqlite3
+# ログ
+*.log
+app.log
+app_err.log

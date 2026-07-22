@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+{% block title %}受講実績{% endblock %}
+{% block page_title %}受講実績: {{ course.title }}{% endblock %}
+
+{% block content %}
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="row">
+      <div class="col-md-6">
+        <table class="table table-sm table-borderless mb-0">
+          <tr><th class="text-muted" style="width:140px">コース名</th><td>{{ course.title }}</td></tr>
+          <tr><th class="text-muted">カリキュラム</th><td>{{ course.category }}</td></tr>
+        </table>
+      </div>
+      <div class="col-md-6">
+        {% set total_e = enrollments | length %}
+        {% set completed_e = enrollments | selectattr('0.status', 'equalto', 'completed') | list | length %}
+        <table class="table table-sm table-borderless mb-0">
+          <tr><th class="text-muted" style="width:140px">受講登録者数</th><td>{{ total_e }}名</td></tr>
+          <tr><th class="text-muted">修了者数</th><td>{{ completed_e }}名</td></tr>
+          <tr><th class="text-muted">修了率</th>
+            <td>{% if total_e > 0 %}{{ (completed_e / total_e * 100) | int }}%{% else %}-{% endif %}</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="d-flex gap-2 mb-3">
+  <a href="{{ url_for('export_csv', course_id=course.id) }}" class="btn btn-success btn-sm">
+    <i class="bi bi-file-earmark-spreadsheet me-1"></i>CSV出力
+  </a>
+  <a href="{{ url_for('export_training_record_pdf', course_id=course.id) }}" class="btn btn-danger btn-sm">
+    <i class="bi bi-file-earmark-pdf me-1"></i>PDF出力
+  </a>
+  <a href="{{ url_for('edit_course', course_id=course.id) }}" class="btn btn-outline-secondary btn-sm ms-auto">
+    <i class="bi bi-arrow-left me-1"></i>コース編集
+  </a>
+</div>
+
+<div class="card">
+  <div class="card-header bg-white fw-semibold">受講者一覧</div>
+  <div class="card-body p-0">
+    {% if enrollments %}
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>氏名</th><th>部署</th><th>受講開始</th><th>修了日</th><th>学習時間</th><th>状況</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for enrollment, user in enrollments %}
+        <tr>
+          <td>{{ user.full_name or user.username }}</td>
+          <td>{{ user.department or '-' }}</td>
+          <td>{{ enrollment.started_at.strftime('%Y/%m/%d') if enrollment.started_at else '-' }}</td>
+          <td>{{ enrollment.completed_at.strftime('%Y/%m/%d') if enrollment.completed_at else '-' }}</td>
+          <td>{{ ((enrollment.total_study_seconds or 0) // 3600) }}h{{ (((enrollment.total_study_seconds or 0) % 3600) // 60) }}m</td>
+          <td>
+            {% if enrollment.status == 'completed' %}
+            <span class="badge badge-completed">修了</span>
+            {% elif enrollment.status == 'in_progress' %}
+            <span class="badge badge-in-progress">受講中</span>
+            {% else %}
+            <span class="badge badge-enrolled">未開始</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="text-center text-muted py-4">受講者がいません</div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}
