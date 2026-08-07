@@ -1524,11 +1524,16 @@ def generate_certificate_pdf(user, course, enrollment):
                             rightMargin=20*mm, leftMargin=20*mm,
                             topMargin=20*mm, bottomMargin=20*mm)
     story = []
-    T = lambda name, **kw: ParagraphStyle(name, fontName='Helvetica', **kw)
-    TB = lambda name, **kw: ParagraphStyle(name, fontName='Helvetica-Bold', **kw)
+    # 日本語フォントを登録し、和文はゴシックで描画（未登録環境ではHelveticaにフォールバック）
+    _ensure_jp_fonts()
+    GOTHIC = 'JpGothic' if 'JpGothic' in pdfmetrics.getRegisteredFontNames() else 'Helvetica'
+    T = lambda name, **kw: ParagraphStyle(name, fontName=GOTHIC, **kw)
+    TB = lambda name, **kw: ParagraphStyle(name, fontName=GOTHIC, **kw)
 
     story.append(Spacer(1, 30*mm))
-    story.append(Paragraph("CERTIFICATE OF COMPLETION", TB('t1', fontSize=22, alignment=1, spaceAfter=8)))
+    # 英字タイトルはHelvetica-Boldのままで可
+    story.append(Paragraph("CERTIFICATE OF COMPLETION",
+                           ParagraphStyle('t1', fontName='Helvetica-Bold', fontSize=22, alignment=1, spaceAfter=8)))
     story.append(Paragraph("訓練修了証", TB('t2', fontSize=20, alignment=1, spaceAfter=20)))
     story.append(Paragraph(f"氏名: {user.full_name or user.username}", TB('l', fontSize=14, alignment=1, spaceAfter=6)))
     story.append(Paragraph(f"社員番号: {user.employee_id or '-'}", T('b', fontSize=12, alignment=1, spaceAfter=4)))
@@ -1559,13 +1564,16 @@ def generate_training_record_pdf(course, enrollments):
                             rightMargin=12*mm, leftMargin=12*mm,
                             topMargin=12*mm, bottomMargin=12*mm)
     story = []
-    styles = getSampleStyleSheet()
+    # 日本語フォントを登録し、見出し・本文・表を和文ゴシックで描画
+    _ensure_jp_fonts()
+    GOTHIC = 'JpGothic' if 'JpGothic' in pdfmetrics.getRegisteredFontNames() else 'Helvetica'
     story.append(Paragraph("訓練実施記録", ParagraphStyle(
-        'h1', fontSize=15, alignment=1, fontName='Helvetica-Bold', spaceAfter=4)))
+        'h1', fontSize=15, alignment=1, fontName=GOTHIC, spaceAfter=4)))
     story.append(Paragraph(
         f"訓練名: {course.title}　訓練種別: {course.training_type}　"
         f"訓練時間: {course.total_hours}h　合格点: {course.pass_score}点　"
-        f"出力日: {datetime.now().strftime('%Y/%m/%d')}", styles['Normal']))
+        f"出力日: {datetime.now().strftime('%Y/%m/%d')}",
+        ParagraphStyle('meta', fontName=GOTHIC, fontSize=9)))
     story.append(Spacer(1, 4*mm))
 
     data = [['氏名', '社員番号', '部署', '雇用形態', '開始日', '修了日',
@@ -1589,7 +1597,7 @@ def generate_training_record_pdf(course, enrollments):
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e293b')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTNAME', (0, 0), (-1, -1), GOTHIC),
         ('FONTSIZE', (0, 0), (-1, 0), 8),
         ('FONTSIZE', (0, 1), (-1, -1), 7),
         ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
