@@ -28,11 +28,20 @@ def run_backup():
     os.makedirs(BACKUP_DIR, exist_ok=True)
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
 
-    # 1. DBファイルのコピー
+    # 1. DBの一貫性スナップショット（稼働中でも安全に取得）
     if os.path.exists(DB_PATH):
         dest = os.path.join(BACKUP_DIR, f'lms_{ts}.db')
-        shutil.copy2(DB_PATH, dest)
-        print(f'DBバックアップ: {dest}')
+        # shutil.copy2 は書き込み中に不整合ファイルを生む恐れがあるため、
+        # SQLite のバックアップAPIでトランザクション整合の取れたコピーを作成する。
+        src_conn = sqlite3.connect(DB_PATH)
+        dst_conn = sqlite3.connect(dest)
+        try:
+            with dst_conn:
+                src_conn.backup(dst_conn)
+            print(f'DBバックアップ: {dest}')
+        finally:
+            src_conn.close()
+            dst_conn.close()
     else:
         print(f'警告: DBファイルが見つかりません ({DB_PATH})')
         return
@@ -66,6 +75,25 @@ def run_backup():
             ])
             writer.writerows(rows)
         print(f'ログCSV出力: {csv_path} ({len(rows)}件)')
+
+        # 2b. ログイン/ログアウト証跡もCSVエクスポート（テーブルがあれば）
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='login_session'")
+        if c.fetchone():
+            login_csv = os.path.join(BACKUP_DIR, f'login_sessions_{ts}.csv')
+            c.execute('''
+                SELECT ls.id, u.employee_id, u.full_name, u.department,
+                       ls.login_at, ls.logout_at, ls.logout_reason, ls.ip_address
+                FROM login_session ls
+                JOIN user u ON ls.user_id = u.id
+                ORDER BY ls.login_at ASC
+            ''')
+            login_rows = c.fetchall()
+            with open(login_csv, 'w', newline='', encoding='utf-8-sig') as f:
+                writer = csv.writer(f)
+                writer.writerow(['ログID', '社員番号', '氏名', '部署',
+                                 'ログイン日時', 'ログアウト日時', '終了区分', 'IPアドレス'])
+                writer.writerows(login_rows)
+            print(f'ログイン証跡CSV出力: {login_csv} ({len(login_rows)}件)')
     except Exception as e:
         print(f'CSV出力エラー: {e}')
     finally:

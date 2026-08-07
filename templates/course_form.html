@@ -23,6 +23,26 @@
             <input type="text" name="category" class="form-control"
                    value="{{ course.category if course else '' }}" placeholder="例：デジタルマーケティング研修">
           </div>
+          <div class="row g-2">
+            <div class="col-md-5 mb-3">
+              <label class="form-label fw-semibold">訓練種別</label>
+              <input type="text" name="training_type" class="form-control"
+                     value="{{ course.training_type if course else '' }}" placeholder="例：専門知識習得コース">
+              <div class="form-text">受講証明書・報告書に記載されます</div>
+            </div>
+            <div class="col-md-4 mb-3">
+              <label class="form-label fw-semibold">規定訓練時間（時間）</label>
+              <input type="number" step="0.1" min="0" name="total_hours" class="form-control"
+                     value="{{ course.total_hours if course else '' }}" placeholder="例：10">
+              <div class="form-text">助成金の要件時間</div>
+            </div>
+            <div class="col-md-3 mb-3">
+              <label class="form-label fw-semibold">合格点</label>
+              <input type="number" min="0" max="100" name="pass_score" class="form-control"
+                     value="{{ course.pass_score if course else 80 }}">
+              <div class="form-text">点以上で修了</div>
+            </div>
+          </div>
           {% if course %}
           <div class="mb-3 form-check">
             <input type="checkbox" name="is_published" class="form-check-input" id="isPublished"

@@ -36,7 +36,17 @@
         {% for lesson in course.lessons %}
         {% set is_done = lesson.id in completed_lesson_ids %}
         {% set is_current = current_lesson and current_lesson.id == lesson.id %}
+        {% set is_locked = lesson.id not in unlocked_lesson_ids %}
+        {% set ds = lesson.duration_seconds or lesson.duration_minutes * 60 %}
 
+        {% if is_locked %}
+        <span class="list-group-item d-flex align-items-center gap-2 locked-lesson"
+              title="前のチャプターを完了すると受講できます">
+          <i class="bi bi-lock-fill flex-shrink-0"></i>
+          <span class="text-truncate">{{ loop.index }}. {{ lesson.title }}</span>
+          <span class="ms-auto small" style="white-space:nowrap">{{ ds // 60 }}分{{ ds % 60 }}秒</span>
+        </span>
+        {% else %}
         <a href="{{ url_for('study_course', course_id=course.id, lesson_id=lesson.id) }}"
            class="list-group-item list-group-item-action d-flex align-items-center gap-2
                   {% if is_current %}active-lesson{% endif %}">
@@ -46,9 +56,9 @@
           <i class="bi bi-play-circle text-primary flex-shrink-0"></i>
           {% endif %}
           <span class="text-truncate">{{ loop.index }}. {{ lesson.title }}</span>
-          {% set ds = lesson.duration_seconds or lesson.duration_minutes * 60 %}
           <span class="ms-auto text-muted small" style="white-space:nowrap">{{ ds // 60 }}分{{ ds % 60 }}秒</span>
         </a>
+        {% endif %}
         {% endfor %}
 
         {% if all_lessons_completed and quiz %}
@@ -423,13 +433,41 @@ function sendComplete(totalWatchSec) {
 }
 </script>
 {% else %}
-{# 動画なし：手動完了ボタン #}
+{# 動画なし：テキストレッスン。滞在時間を計測しつつ手動完了 #}
 <script>
+const COURSE_ID = {{ course.id }};
+const LESSON_ID = {{ current_lesson.id }};
+const ALREADY_DONE = {{ 'true' if current_lesson.id in completed_lesson_ids else 'false' }};
+const HEARTBEAT_SEC = 5;
+let textHeartbeatTimer = null;
+let lastActivity = Date.now();
+const INACTIVITY_MS = 5 * 60 * 1000;
+
+// 滞在時間ハートビート: サーバ側が「前回からの実経過時間」で加算するため水増しはできない。
+// タブ非表示・無操作（5分）では送信を止めて計測を停止する（自動一時停止の要件）。
+function sendTextHeartbeat() {
+  if (document.hidden) return;
+  if (Date.now() - lastActivity > INACTIVITY_MS) return;
+  fetch(`/courses/${COURSE_ID}/lessons/${LESSON_ID}/heartbeat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ position_seconds: 0 })
+  }).catch(() => {});
+}
+
+if (!ALREADY_DONE) {
+  ['mousemove', 'keydown', 'scroll', 'click'].forEach(ev =>
+    document.addEventListener(ev, () => { lastActivity = Date.now(); }, { passive: true }));
+  textHeartbeatTimer = setInterval(sendTextHeartbeat, HEARTBEAT_SEC * 1000);
+}
+
 document.getElementById('completeBtn')?.addEventListener('click', function () {
   const courseId = this.dataset.course;
   const lessonId = this.dataset.lesson;
   this.disabled = true;
   this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>処理中...';
+  if (textHeartbeatTimer) clearInterval(textHeartbeatTimer);
+  // 滞在時間はハートビートで積算済みのため watch_seconds は送らない（二重計上防止）
   fetch(`/courses/${courseId}/lessons/${lessonId}/complete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

@@ -1,0 +1,12 @@
+# LMS研修システム 依存パッケージ（Python 3.12 で動作確認）
+# インストール: pip install -r requirements.txt
+
+Flask>=3.0,<4.0
+Flask-Login>=0.6.3
+Flask-SQLAlchemy>=3.1,<4.0
+Werkzeug>=3.0,<4.0
+reportlab>=4.0
+requests>=2.31
+
+# 本番用WSGIサーバ（Windows対応）。開発は python app.py、本番は waitress を使用。
+waitress>=3.0

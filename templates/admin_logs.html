@@ -41,7 +41,11 @@
         </button>
         <a href="{{ url_for('export_full_logs_csv', course_id=selected_course or '') }}"
            class="btn btn-success btn-sm">
-          <i class="bi bi-file-earmark-spreadsheet me-1"></i>CSV出力
+          <i class="bi bi-file-earmark-spreadsheet me-1"></i>受講ログCSV
+        </a>
+        <a href="{{ url_for('export_login_sessions_csv', user_id=selected_user or '') }}"
+           class="btn btn-outline-success btn-sm">
+          <i class="bi bi-box-arrow-in-right me-1"></i>ログイン証跡CSV
         </a>
       </div>
     </form>

@@ -21,7 +21,19 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'lms-secret-key-2024'
+# SECRET_KEY は環境変数 LMS_SECRET_KEY から読み込む。未設定時は起動ごとにランダム生成
+# （＝再起動で全セッション無効化）し、本番では必ず環境変数を設定するよう警告する。
+_secret = os.environ.get('LMS_SECRET_KEY')
+if not _secret:
+    _secret = secrets.token_hex(32)
+    print('[警告] LMS_SECRET_KEY が未設定です。本番環境では固定の秘密鍵を環境変数に設定してください。')
+app.config['SECRET_KEY'] = _secret
+
+# セッションCookieのセキュリティ強化
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+# HTTPS 配信時は環境変数 LMS_HTTPS=1 を設定して Secure 属性を有効化する
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('LMS_HTTPS') == '1'
 
 @app.template_filter('fromjson')
 def fromjson_filter(s):
@@ -111,6 +123,16 @@ class ActiveSession(db.Model):
     logged_in_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class LoginSession(db.Model):
+    """ログイン/ログアウトの証跡（助成金審査の実施期間証明）。1ログイン=1レコードを追記保存。"""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    login_at = db.Column(db.DateTime, default=datetime.utcnow)
+    logout_at = db.Column(db.DateTime)  # 明示ログアウト or 二重ログインによる強制終了時に記録
+    logout_reason = db.Column(db.String(30))  # 'logout' / 'forced'（別端末ログイン）
+    ip_address = db.Column(db.String(50))
+
+
 class Course(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
@@ -184,6 +206,7 @@ class LessonProgress(db.Model):
     completed_at = db.Column(db.DateTime)
     actual_watch_seconds = db.Column(db.Integer, default=0)  # 実測視聴秒数（改ざん防止：APIのみ更新）
     last_position_seconds = db.Column(db.Integer, default=0)  # レジュメ用
+    last_heartbeat_at = db.Column(db.DateTime)  # 改ざん防止：サーバ実時間ベースで加算量を制限
     is_completed = db.Column(db.Boolean, default=False)
 
 
@@ -230,17 +253,31 @@ def check_session_and_password():
     if current_user.force_password_change:
         return redirect(url_for('change_password'))
 
-    # 二重ログイン防止: セッショントークンが最新でなければ強制ログアウト
+    # 二重ログイン防止: セッショントークンが最新でなければ強制ログアウト。
+    # トークンが欠損している場合もチェックをすり抜けさせず再ログインを求める。
     token = session.get('session_token')
-    if token:
-        active = ActiveSession.query.filter_by(user_id=current_user.id).first()
-        if not active or active.token != token:
-            logout_user()
-            flash('別の端末でログインされたため、セッションが終了しました。', 'warning')
-            return redirect(url_for('login'))
+    active = ActiveSession.query.filter_by(user_id=current_user.id).first()
+    if not token or not active or active.token != token:
+        close_login_session('forced')
+        logout_user()
+        flash('別の端末でログインされたため、セッションが終了しました。', 'warning')
+        return redirect(url_for('login'))
 
 
 # ===== 認証 =====
+
+def close_login_session(reason):
+    """現在のログイン証跡にログアウト時刻を記録する（未記録時のみ）。"""
+    log_id = session.get('login_session_id')
+    if not log_id:
+        return
+    log = LoginSession.query.get(log_id)
+    if log and log.logout_at is None:
+        log.logout_at = datetime.utcnow()
+        log.logout_reason = reason
+        db.session.commit()
+    session.pop('login_session_id', None)
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -257,9 +294,13 @@ def login():
                 active.logged_in_at = datetime.utcnow()
             else:
                 db.session.add(ActiveSession(user_id=user.id, token=token))
+            # ログイン証跡を追記（秒単位で保持）
+            login_log = LoginSession(user_id=user.id, ip_address=request.remote_addr)
+            db.session.add(login_log)
             db.session.commit()
             login_user(user)
             session['session_token'] = token
+            session['login_session_id'] = login_log.id
             return redirect(url_for('dashboard'))
         flash('ユーザー名またはパスワードが正しくありません', 'danger')
     return render_template('login.html')
@@ -268,6 +309,7 @@ def login():
 @app.route('/logout')
 @login_required
 def logout():
+    close_login_session('logout')
     ActiveSession.query.filter_by(user_id=current_user.id).delete()
     db.session.commit()
     logout_user()
@@ -358,6 +400,9 @@ def new_course():
             title=request.form['title'],
             description=request.form.get('description', ''),
             category=request.form.get('category', ''),
+            training_type=request.form.get('training_type', ''),
+            total_hours=float(request.form.get('total_hours') or 0),
+            pass_score=int(request.form.get('pass_score') or 80),
             created_by=current_user.id
         )
         db.session.add(course)
@@ -377,6 +422,9 @@ def edit_course(course_id):
         course.title = request.form['title']
         course.description = request.form.get('description', '')
         course.category = request.form.get('category', '')
+        course.training_type = request.form.get('training_type', '')
+        course.total_hours = float(request.form.get('total_hours') or 0)
+        course.pass_score = int(request.form.get('pass_score') or 80)
         course.is_published = 'is_published' in request.form
         db.session.commit()
         flash('コースを更新しました', 'success')
@@ -769,6 +817,18 @@ def enroll_course(course_id):
     return redirect(url_for('study_course', course_id=course_id))
 
 
+def compute_unlocked_lesson_ids(course, completed_lesson_ids):
+    """未視聴制御: 各レッスンは、順序上の直前レッスンが完了している場合のみ解放する。
+    先頭レッスンは常に解放。助成金要件「前チャプター完了まで次へ進めない」の担保。"""
+    unlocked = set()
+    prev_completed = True  # 先頭レッスンは常に解放
+    for lesson in course.lessons:  # course.lessons は Lesson.order 昇順
+        if prev_completed:
+            unlocked.add(lesson.id)
+        prev_completed = lesson.id in completed_lesson_ids
+    return unlocked
+
+
 @app.route('/courses/<int:course_id>/study')
 @login_required
 def study_course(course_id):
@@ -782,13 +842,22 @@ def study_course(course_id):
         db.session.commit()
 
     completed_lesson_ids = {lp.lesson_id for lp in enrollment.lesson_progress if lp.is_completed}
+    unlocked_lesson_ids = compute_unlocked_lesson_ids(course, completed_lesson_ids)
 
     lesson_id = request.args.get('lesson_id', type=int)
     current_lesson = None
     if lesson_id:
         current_lesson = next((l for l in course.lessons if l.id == lesson_id), None)
+    # 未解放レッスンへの直接アクセスを拒否し、受講可能な先頭レッスンへ誘導
+    if current_lesson is not None and current_lesson.id not in unlocked_lesson_ids:
+        flash('前のチャプターを完了してから次に進んでください。', 'warning')
+        current_lesson = None
     if current_lesson is None and course.lessons:
-        current_lesson = course.lessons[0]
+        # 未完了かつ解放済みの最初のレッスン（無ければ先頭）を選択
+        current_lesson = next(
+            (l for l in course.lessons
+             if l.id in unlocked_lesson_ids and l.id not in completed_lesson_ids),
+            course.lessons[0])
 
     # レジュメ位置を取得
     resume_seconds = 0
@@ -820,6 +889,7 @@ def study_course(course_id):
                            course=course, enrollment=enrollment,
                            current_lesson=current_lesson,
                            completed_lesson_ids=completed_lesson_ids,
+                           unlocked_lesson_ids=unlocked_lesson_ids,
                            resume_seconds=resume_seconds,
                            quiz=quiz,
                            all_lessons_completed=all_completed,
@@ -851,9 +921,12 @@ def set_lesson_duration(course_id, lesson_id):
     seconds = int(data.get('duration_seconds', 0))
     if seconds > 0:
         lesson = Lesson.query.filter_by(id=lesson_id, course_id=course_id).first_or_404()
-        lesson.duration_seconds = seconds
-        lesson.duration_minutes = max(1, seconds // 60)
-        db.session.commit()
+        # 改ざん防止: 動画長は視聴時間の上限判定に使うため、未設定時のみ書き込む（write-once）。
+        # 既に確定済みの値を受講者が後から書き換えられないようにする。
+        if not lesson.duration_seconds:
+            lesson.duration_seconds = seconds
+            lesson.duration_minutes = max(1, seconds // 60)
+            db.session.commit()
     return jsonify({'ok': True})
 
 
@@ -886,6 +959,12 @@ def lesson_heartbeat(course_id, lesson_id):
     if not enrollment:
         return jsonify({'ok': False}), 404
 
+    # 未視聴制御: 未解放レッスンでは時間計測しない（API直叩き対策）
+    course = Course.query.get_or_404(course_id)
+    completed_ids = {lp.lesson_id for lp in enrollment.lesson_progress if lp.is_completed}
+    if lesson_id not in compute_unlocked_lesson_ids(course, completed_ids):
+        return jsonify({'ok': False, 'error': '前のチャプターが未完了です'}), 403
+
     progress = LessonProgress.query.filter_by(
         enrollment_id=enrollment.id, lesson_id=lesson_id).first()
     if not progress:
@@ -898,9 +977,20 @@ def lesson_heartbeat(course_id, lesson_id):
 
     progress.last_position_seconds = position_seconds
     # 未完了レッスンのみ視聴時間を加算（完了済みの再視聴では加算しない）
+    now = datetime.utcnow()
     if not progress.is_completed:
-        progress.actual_watch_seconds = (progress.actual_watch_seconds or 0) + 5
-        enrollment.total_study_seconds = (enrollment.total_study_seconds or 0) + 5
+        # 改ざん防止: クライアント申告ではなく「サーバ側の前回ハートビートからの実経過時間」で加算。
+        # 連打しても実時間ぶんしか増えず、一時停止・タブ切替の中断ぶんも上限で頭打ちになる。
+        HEARTBEAT_INTERVAL = 5   # クライアント送信間隔（秒）
+        MAX_INCREMENT = 10       # 1ハートビートあたりの加算上限（中断からの復帰時のスパイクを抑止）
+        if progress.last_heartbeat_at is not None:
+            elapsed = (now - progress.last_heartbeat_at).total_seconds()
+        else:
+            elapsed = HEARTBEAT_INTERVAL  # 初回は想定間隔ぶんだけ加算
+        increment = int(round(max(0, min(elapsed, MAX_INCREMENT))))
+        progress.actual_watch_seconds = (progress.actual_watch_seconds or 0) + increment
+        enrollment.total_study_seconds = (enrollment.total_study_seconds or 0) + increment
+    progress.last_heartbeat_at = now
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -915,6 +1005,12 @@ def complete_lesson(course_id, lesson_id):
     enrollment = Enrollment.query.filter_by(
         user_id=current_user.id, course_id=course_id).first_or_404()
 
+    # 未視聴制御: 直前レッスンが未完了なら完了処理を拒否（API直叩き対策）
+    course = Course.query.get_or_404(course_id)
+    completed_ids = {lp.lesson_id for lp in enrollment.lesson_progress if lp.is_completed}
+    if lesson_id not in compute_unlocked_lesson_ids(course, completed_ids):
+        return jsonify({'ok': False, 'error': '前のチャプターが未完了です'}), 403
+
     progress = LessonProgress.query.filter_by(
         enrollment_id=enrollment.id, lesson_id=lesson_id).first()
     if not progress:
@@ -928,10 +1024,14 @@ def complete_lesson(course_id, lesson_id):
     if not progress.is_completed:
         progress.is_completed = True
         progress.completed_at = datetime.utcnow()
-        # ハートビートで積算した値より完了時点の秒数の方が大きければ更新
-        if final_seconds > (progress.actual_watch_seconds or 0):
-            diff = final_seconds - (progress.actual_watch_seconds or 0)
-            progress.actual_watch_seconds = final_seconds
+        # ハートビートで積算した値より完了時点の秒数の方が大きければ更新。
+        # 改ざん防止: クライアント申告値は動画長を上限にして水増しを防ぐ。
+        lesson = Lesson.query.filter_by(id=lesson_id, course_id=course_id).first()
+        cap = (lesson.duration_seconds or 0) if lesson else 0
+        capped_final = min(final_seconds, cap) if cap > 0 else final_seconds
+        if capped_final > (progress.actual_watch_seconds or 0):
+            diff = capped_final - (progress.actual_watch_seconds or 0)
+            progress.actual_watch_seconds = capped_final
             enrollment.total_study_seconds = (enrollment.total_study_seconds or 0) + diff
 
         log = StudyLog(
@@ -982,7 +1082,11 @@ def submit_quiz(course_id):
     course = Course.query.get(course_id)
     completed_lessons = LessonProgress.query.filter_by(
         enrollment_id=enrollment.id, is_completed=True).count()
-    if score >= course.pass_score and completed_lessons == len(course.lessons):
+    # レッスンが1本以上あり、全レッスン完了かつ合格点以上のときのみ修了。
+    # （レッスン0本コースが 0==0 で即修了になる不具合を防止）
+    if (len(course.lessons) > 0
+            and score >= course.pass_score
+            and completed_lessons == len(course.lessons)):
         enrollment.status = 'completed'
         enrollment.completed_at = datetime.utcnow()
 
@@ -1170,6 +1274,51 @@ def export_full_logs_csv():
         ])
     output.seek(0)
     filename = f'受講ログ_{datetime.now().strftime("%Y%m%d")}.csv'
+    return send_file(
+        io.BytesIO(output.getvalue().encode('utf-8-sig')),
+        download_name=filename,
+        as_attachment=True, mimetype='text/csv; charset=utf-8-sig'
+    )
+
+
+@app.route('/admin/logs/login/export/csv')
+@login_required
+def export_login_sessions_csv():
+    """ログイン/ログアウト証跡をCSV出力（秒単位・実施期間の整合性証明用）"""
+    if current_user.role != 'skillgrowth':
+        return redirect(url_for('dashboard'))
+    user_id = request.args.get('user_id', type=int)
+
+    query = (db.session.query(LoginSession, User)
+             .join(User, LoginSession.user_id == User.id))
+    if user_id:
+        query = query.filter(LoginSession.user_id == user_id)
+    sessions = query.order_by(LoginSession.login_at.asc()).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['ログID', '社員番号', '氏名', '部署',
+                     'ログイン日時', 'ログアウト日時', '滞在時間（秒）',
+                     '終了区分', 'IPアドレス'])
+    reason_map = {'logout': '通常ログアウト', 'forced': '別端末ログインによる終了'}
+    for s, user in sessions:
+        if s.login_at and s.logout_at:
+            stay_seconds = int((s.logout_at - s.login_at).total_seconds())
+        else:
+            stay_seconds = ''
+        writer.writerow([
+            s.id,
+            user.employee_id or '',
+            user.full_name or user.username,
+            user.department or '',
+            s.login_at.strftime('%Y/%m/%d %H:%M:%S') if s.login_at else '',
+            s.logout_at.strftime('%Y/%m/%d %H:%M:%S') if s.logout_at else '（未ログアウト）',
+            stay_seconds,
+            reason_map.get(s.logout_reason, ''),
+            s.ip_address or ''
+        ])
+    output.seek(0)
+    filename = f'ログイン証跡_{datetime.now().strftime("%Y%m%d")}.csv'
     return send_file(
         io.BytesIO(output.getvalue().encode('utf-8-sig')),
         download_name=filename,
@@ -1459,15 +1608,22 @@ def create_initial_data():
     with app.app_context():
         db.create_all()
         if not User.query.filter_by(username='admin').first():
+            # 初期パスワードは環境変数で上書き可。初回ログイン時にパスワード変更を強制する。
+            init_pw = os.environ.get('LMS_ADMIN_PASSWORD', 'admin123')
             db.session.add(User(
                 username='admin', email='admin@example.com',
-                password_hash=generate_password_hash('admin123'),
-                full_name='管理者', role='skillgrowth'
+                password_hash=generate_password_hash(init_pw),
+                full_name='管理者', role='skillgrowth',
+                force_password_change=True
             ))
             db.session.commit()
-            print('管理者アカウント作成: admin / admin123')
+            print(f'管理者アカウント作成: admin / {init_pw}（初回ログイン時にパスワード変更が必要です）')
 
 
 if __name__ == '__main__':
     create_initial_data()
-    app.run(debug=True, port=5000)
+    # debug は既定で無効。開発時のみ環境変数 FLASK_DEBUG=1 で有効化する。
+    debug = os.environ.get('FLASK_DEBUG') == '1'
+    host = os.environ.get('LMS_HOST', '127.0.0.1')
+    port = int(os.environ.get('LMS_PORT', '5000'))
+    app.run(debug=debug, host=host, port=port)

@@ -52,6 +52,11 @@ def migrate():
         c.execute('ALTER TABLE lesson_progress ADD COLUMN last_position_seconds INTEGER DEFAULT 0')
         migrations.append('lesson_progress.last_position_seconds')
 
+    # lesson_progress: last_heartbeat_at（改ざん防止: サーバ実時間ベースの加算制限用）
+    if not column_exists(c, 'lesson_progress', 'last_heartbeat_at'):
+        c.execute('ALTER TABLE lesson_progress ADD COLUMN last_heartbeat_at DATETIME')
+        migrations.append('lesson_progress.last_heartbeat_at')
+
     # study_log: duration_seconds（旧: duration_minutes * 60 で移行）
     if not column_exists(c, 'study_log', 'duration_seconds'):
         c.execute('ALTER TABLE study_log ADD COLUMN duration_seconds INTEGER DEFAULT 0')
@@ -68,6 +73,18 @@ def migrate():
             logged_in_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )''')
         migrations.append('テーブル: active_session')
+
+    # login_session テーブル作成（ログイン/ログアウト証跡）
+    if not table_exists(c, 'login_session'):
+        c.execute('''CREATE TABLE login_session (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES user(id),
+            login_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            logout_at DATETIME,
+            logout_reason VARCHAR(30),
+            ip_address VARCHAR(50)
+        )''')
+        migrations.append('テーブル: login_session')
 
     # quiz_attempt テーブル作成
     if not table_exists(c, 'quiz_attempt'):
