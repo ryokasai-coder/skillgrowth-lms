@@ -1,12 +1,13 @@
 @echo off
-REM LMS研修システム 自動バックアップ（Windowsタスクスケジューラから呼び出す）
-REM このバッチと同じフォルダの backup.py を実行する。
+REM LMS training system - automated backup (called by Windows Task Scheduler).
+REM Runs backup.py located in the same folder as this batch file.
 
 cd /d "%~dp0"
 
-REM 仮想環境があれば有効化（無ければシステムのPythonを使用）
+REM Activate the virtualenv if present; otherwise use the system Python.
 if exist "venv\Scripts\activate.bat" (
     call "venv\Scripts\activate.bat"
 )
 
+if not exist "%~dp0backups" mkdir "%~dp0backups"
 python backup.py >> "%~dp0backups\backup.log" 2>&1
