@@ -135,6 +135,10 @@
         {% if current_user.role == 'skillgrowth' %}<span class="badge bg-primary ms-1">Skillgrowth</span>
         {% elif current_user.role == 'company_admin' %}<span class="badge bg-success ms-1">会社管理者</span>{% endif %}
       </span>
+      <a href="{{ url_for('mfa_setup') }}" class="btn btn-sm btn-outline-secondary" title="多要素認証の設定">
+        <i class="bi bi-shield-lock"></i>
+        {% if current_user.mfa_enabled %}<span class="text-success">MFA有効</span>{% else %}MFA設定{% endif %}
+      </a>
       <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline-secondary">
         <i class="bi bi-box-arrow-right"></i> ログアウト
       </a>

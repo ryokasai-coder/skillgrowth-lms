@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+{% block title %}多要素認証の設定{% endblock %}
+{% block page_title %}多要素認証（MFA）の設定{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    {% if enabled %}
+    <div class="card">
+      <div class="card-body p-4 text-center">
+        <div class="mb-3"><i class="bi bi-shield-fill-check text-success" style="font-size:2.5rem"></i></div>
+        <h5 class="mb-2">多要素認証は有効です</h5>
+        <p class="text-muted small">ログイン時に認証アプリの6桁コードが必要になります。</p>
+        <form method="POST" action="{{ url_for('mfa_disable') }}"
+              onsubmit="return confirm('多要素認証を無効化しますか？');">
+          <button type="submit" class="btn btn-outline-danger btn-sm">
+            <i class="bi bi-shield-slash me-1"></i>無効化する
+          </button>
+        </form>
+      </div>
+    </div>
+    {% else %}
+    <div class="card">
+      <div class="card-body p-4">
+        <h5 class="mb-3">認証アプリで有効化</h5>
+        <ol class="small text-muted mb-3">
+          <li>Google Authenticator 等の認証アプリを開く</li>
+          <li>下のQRコードを読み取る（または手動でキーを入力）</li>
+          <li>表示された6桁コードを入力して「有効化」を押す</li>
+        </ol>
+        <div class="text-center mb-3">
+          <img src="{{ qr_data_uri }}" alt="MFA QRコード" class="img-fluid"
+               style="max-width:220px; border:1px solid #e2e8f0; border-radius:8px;">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">手動入力用キー</label>
+          <input type="text" class="form-control form-control-sm text-center" value="{{ secret }}" readonly
+                 onclick="this.select()">
+        </div>
+        <form method="POST">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">認証コード（6桁）</label>
+            <input type="text" name="code" class="form-control text-center"
+                   inputmode="numeric" pattern="[0-9 ]*" maxlength="7" placeholder="000000" required>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-shield-check me-1"></i>有効化する
+          </button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

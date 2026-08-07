@@ -31,6 +31,27 @@ def migrate():
         c.execute('ALTER TABLE user ADD COLUMN force_password_change BOOLEAN DEFAULT 0')
         migrations.append('user.force_password_change')
 
+    # user: ログイン試行制限
+    if not column_exists(c, 'user', 'failed_login_count'):
+        c.execute('ALTER TABLE user ADD COLUMN failed_login_count INTEGER DEFAULT 0')
+        migrations.append('user.failed_login_count')
+    if not column_exists(c, 'user', 'lockout_until'):
+        c.execute('ALTER TABLE user ADD COLUMN lockout_until DATETIME')
+        migrations.append('user.lockout_until')
+
+    # user: MFA（TOTP）
+    if not column_exists(c, 'user', 'mfa_secret'):
+        c.execute('ALTER TABLE user ADD COLUMN mfa_secret VARCHAR(32)')
+        migrations.append('user.mfa_secret')
+    if not column_exists(c, 'user', 'mfa_enabled'):
+        c.execute('ALTER TABLE user ADD COLUMN mfa_enabled BOOLEAN DEFAULT 0')
+        migrations.append('user.mfa_enabled')
+
+    # enrollment: progress_percent（進捗率）
+    if not column_exists(c, 'enrollment', 'progress_percent'):
+        c.execute('ALTER TABLE enrollment ADD COLUMN progress_percent INTEGER DEFAULT 0')
+        migrations.append('enrollment.progress_percent')
+
     # enrollment: total_study_seconds（旧: total_study_minutes * 60 で移行）
     if not column_exists(c, 'enrollment', 'total_study_seconds'):
         c.execute('ALTER TABLE enrollment ADD COLUMN total_study_seconds INTEGER DEFAULT 0')

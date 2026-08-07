@@ -2,8 +2,11 @@ import os
 import io
 import csv
 import json
+import base64
 import secrets
 from datetime import datetime, timedelta
+import pyotp
+import qrcode
 from flask import (Flask, render_template, request, redirect, url_for,
                    flash, send_file, jsonify, session, abort)
 from flask_sqlalchemy import SQLAlchemy
@@ -100,6 +103,12 @@ class User(UserMixin, db.Model):
     employment_type = db.Column(db.String(50))
     hire_date = db.Column(db.Date)
     force_password_change = db.Column(db.Boolean, default=False)
+    # ログイン試行回数制限（総当たり対策）
+    failed_login_count = db.Column(db.Integer, default=0)
+    lockout_until = db.Column(db.DateTime)
+    # MFA（TOTP多要素認証・任意）
+    mfa_secret = db.Column(db.String(32))
+    mfa_enabled = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     enrollments = db.relationship('Enrollment', backref='user', lazy=True)
 
@@ -191,6 +200,7 @@ class Enrollment(db.Model):
     total_study_seconds = db.Column(db.Integer, default=0)  # 実際の視聴秒数（心拍ベース）
     quiz_score = db.Column(db.Integer)
     quiz_attempts = db.Column(db.Integer, default=0)
+    progress_percent = db.Column(db.Integer, default=0)  # レッスン完了ベースの進捗率（%）
     status = db.Column(db.String(20), default='enrolled')
     lesson_progress = db.relationship('LessonProgress', backref='enrollment', lazy=True)
 
@@ -280,31 +290,125 @@ def close_login_session(reason):
     session.pop('login_session_id', None)
 
 
+MAX_LOGIN_ATTEMPTS = 5   # 連続失敗の上限
+LOCKOUT_MINUTES = 15     # 上限到達時のロック時間（分）
+
+
+def _establish_session(user):
+    """パスワード（＋MFA）検証後に実セッションを確立し、証跡を記録する。"""
+    token = secrets.token_hex(32)
+    active = ActiveSession.query.filter_by(user_id=user.id).first()
+    if active:
+        active.token = token
+        active.logged_in_at = datetime.utcnow()
+    else:
+        db.session.add(ActiveSession(user_id=user.id, token=token))
+    login_log = LoginSession(user_id=user.id, ip_address=request.remote_addr)
+    db.session.add(login_log)
+    # ログイン成功で失敗カウンタをリセット
+    user.failed_login_count = 0
+    user.lockout_until = None
+    db.session.commit()
+    login_user(user)
+    session['session_token'] = token
+    session['login_session_id'] = login_log.id
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
     if request.method == 'POST':
         user = User.query.filter_by(username=request.form['username']).first()
+
+        # アカウントロック中の判定（総当たり対策）
+        if user and user.lockout_until and user.lockout_until > datetime.utcnow():
+            remain = int((user.lockout_until - datetime.utcnow()).total_seconds() // 60) + 1
+            flash(f'ログイン試行回数の上限を超えました。約{remain}分後に再度お試しください。', 'danger')
+            return render_template('login.html')
+
         if user and check_password_hash(user.password_hash, request.form['password']):
-            # セッショントークン生成（二重ログイン防止）
-            token = secrets.token_hex(32)
-            active = ActiveSession.query.filter_by(user_id=user.id).first()
-            if active:
-                active.token = token
-                active.logged_in_at = datetime.utcnow()
-            else:
-                db.session.add(ActiveSession(user_id=user.id, token=token))
-            # ログイン証跡を追記（秒単位で保持）
-            login_log = LoginSession(user_id=user.id, ip_address=request.remote_addr)
-            db.session.add(login_log)
-            db.session.commit()
-            login_user(user)
-            session['session_token'] = token
-            session['login_session_id'] = login_log.id
+            # MFA有効ユーザーは2要素目の検証へ（本認証は保留）
+            if user.mfa_enabled and user.mfa_secret:
+                session['mfa_pending_user_id'] = user.id
+                return redirect(url_for('mfa_verify'))
+            _establish_session(user)
             return redirect(url_for('dashboard'))
+
+        # 認証失敗: 失敗カウントを加算し、上限でロック
+        if user:
+            user.failed_login_count = (user.failed_login_count or 0) + 1
+            if user.failed_login_count >= MAX_LOGIN_ATTEMPTS:
+                user.lockout_until = datetime.utcnow() + timedelta(minutes=LOCKOUT_MINUTES)
+                user.failed_login_count = 0
+                db.session.commit()
+                flash(f'ログイン試行回数の上限を超えました。約{LOCKOUT_MINUTES}分間ロックされます。', 'danger')
+                return render_template('login.html')
+            db.session.commit()
         flash('ユーザー名またはパスワードが正しくありません', 'danger')
     return render_template('login.html')
+
+
+@app.route('/mfa/verify', methods=['GET', 'POST'])
+def mfa_verify():
+    """ログイン第2要素（TOTP）の検証。パスワード認証済みユーザーのみ。"""
+    uid = session.get('mfa_pending_user_id')
+    if not uid:
+        return redirect(url_for('login'))
+    user = User.query.get(uid)
+    if not user or not user.mfa_enabled or not user.mfa_secret:
+        session.pop('mfa_pending_user_id', None)
+        return redirect(url_for('login'))
+    if request.method == 'POST':
+        code = request.form.get('code', '').strip().replace(' ', '')
+        if pyotp.TOTP(user.mfa_secret).verify(code, valid_window=1):
+            session.pop('mfa_pending_user_id', None)
+            _establish_session(user)
+            return redirect(url_for('dashboard'))
+        flash('認証コードが正しくありません。', 'danger')
+    return render_template('mfa_verify.html')
+
+
+@app.route('/mfa/setup', methods=['GET', 'POST'])
+@login_required
+def mfa_setup():
+    """MFA（TOTP）の有効化。QRを表示し、コード検証に成功したら有効化する。"""
+    if request.method == 'POST':
+        secret = session.get('mfa_setup_secret')
+        code = request.form.get('code', '').strip().replace(' ', '')
+        if secret and pyotp.TOTP(secret).verify(code, valid_window=1):
+            current_user.mfa_secret = secret
+            current_user.mfa_enabled = True
+            db.session.commit()
+            session.pop('mfa_setup_secret', None)
+            flash('多要素認証を有効化しました。', 'success')
+            return redirect(url_for('mfa_setup'))
+        flash('認証コードが正しくありません。QRを読み込み直して再度お試しください。', 'danger')
+
+    if current_user.mfa_enabled:
+        return render_template('mfa_setup.html', enabled=True, qr_data_uri=None, secret=None)
+
+    # 未有効: 新しいシークレットとプロビジョニングQRを生成
+    secret = pyotp.random_base32()
+    session['mfa_setup_secret'] = secret
+    uri = pyotp.TOTP(secret).provisioning_uri(
+        name=current_user.username, issuer_name='Skillgrowth LMS')
+    img = qrcode.make(uri)
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    qr_data_uri = 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode()
+    return render_template('mfa_setup.html', enabled=False,
+                           qr_data_uri=qr_data_uri, secret=secret)
+
+
+@app.route('/mfa/disable', methods=['POST'])
+@login_required
+def mfa_disable():
+    current_user.mfa_enabled = False
+    current_user.mfa_secret = None
+    db.session.commit()
+    flash('多要素認証を無効化しました。', 'success')
+    return redirect(url_for('mfa_setup'))
 
 
 @app.route('/logout')
@@ -1045,9 +1149,15 @@ def complete_lesson(course_id, lesson_id):
             ip_address=request.remote_addr
         )
         db.session.add(log)
+
+        # 進捗率をDBに保存（完了レッスン数 / 総レッスン数）
+        total_lessons = len(course.lessons)
+        done = len(completed_ids | {lesson_id})
+        enrollment.progress_percent = int(done / total_lessons * 100) if total_lessons else 0
         db.session.commit()
 
-    return jsonify({'ok': True, 'total_seconds': enrollment.total_study_seconds})
+    return jsonify({'ok': True, 'total_seconds': enrollment.total_study_seconds,
+                    'progress_percent': enrollment.progress_percent})
 
 
 @app.route('/courses/<int:course_id>/quiz/submit', methods=['POST'])

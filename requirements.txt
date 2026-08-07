@@ -7,6 +7,8 @@ Flask-SQLAlchemy>=3.1,<4.0
 Werkzeug>=3.0,<4.0
 reportlab>=4.0
 requests>=2.31
+pyotp>=2.9          # 多要素認証（TOTP）
+qrcode>=7.4         # MFAプロビジョニングQR生成
 
 # 本番用WSGIサーバ（Windows対応）。開発は python app.py、本番は waitress を使用。
 waitress>=3.0
