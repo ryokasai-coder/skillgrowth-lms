@@ -41,7 +41,8 @@ def fromjson_filter(s):
         return json.loads(s) if s else {}
     except Exception:
         return {}
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///lms.db'
+# DB接続先は環境変数 LMS_DATABASE_URI で上書き可（テスト隔離・PostgreSQL移行に対応）。既定はSQLite。
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('LMS_DATABASE_URI', 'sqlite:///lms.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)

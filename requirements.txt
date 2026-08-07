@@ -10,3 +10,6 @@ requests>=2.31
 
 # 本番用WSGIサーバ（Windows対応）。開発は python app.py、本番は waitress を使用。
 waitress>=3.0
+
+# 開発・テスト用（本番不要）: python -m pytest
+pytest>=8.0
