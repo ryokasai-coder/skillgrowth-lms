@@ -10,8 +10,9 @@
         <i class="bi bi-clipboard-plus me-2"></i>受講を割り当てる
       </div>
       <div class="card-body">
-        <form method="POST" action="{{ url_for('add_enrollment') }}">
-          <div class="mb-3">
+        <!-- カリキュラム一括割り当て（推奨） -->
+        <form method="POST" action="{{ url_for('add_curriculum_enrollment') }}" class="mb-3">
+          <div class="mb-2">
             <label class="form-label fw-semibold">受講者</label>
             <select name="user_id" class="form-select" required>
               <option value="">-- 選択 --</option>
@@ -20,17 +21,42 @@
               {% endfor %}
             </select>
           </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">コース</label>
-            <select name="course_id" class="form-select" required>
+          <div class="mb-2">
+            <label class="form-label fw-semibold">カリキュラム（一括）</label>
+            <select name="curriculum" class="form-select" required>
               <option value="">-- 選択 --</option>
+              {% for cur in curricula %}
+              <option value="{{ cur }}">{{ cur }}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">選んだカリキュラムの全コースをまとめて登録します</div>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-collection me-1"></i>カリキュラムを一括登録
+          </button>
+        </form>
+
+        <hr class="my-3">
+
+        <!-- 1コースだけ割り当て -->
+        <form method="POST" action="{{ url_for('add_enrollment') }}">
+          <div class="mb-2">
+            <label class="form-label fw-semibold small">個別に1コースだけ登録する場合</label>
+            <select name="user_id" class="form-select form-select-sm mb-2" required>
+              <option value="">-- 受講者を選択 --</option>
+              {% for user in users %}
+              <option value="{{ user.id }}">{{ user.full_name or user.username }}</option>
+              {% endfor %}
+            </select>
+            <select name="course_id" class="form-select form-select-sm" required>
+              <option value="">-- コースを選択 --</option>
               {% for course in courses %}
-              <option value="{{ course.id }}">{{ course.title }}</option>
+              <option value="{{ course.id }}">{{ course.category }} / {{ course.title }}</option>
               {% endfor %}
             </select>
           </div>
-          <button type="submit" class="btn btn-primary w-100">
-            <i class="bi bi-plus-circle me-1"></i>受講登録
+          <button type="submit" class="btn btn-outline-secondary btn-sm w-100">
+            <i class="bi bi-plus-circle me-1"></i>この1コースを登録
           </button>
         </form>
       </div>

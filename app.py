@@ -735,8 +735,16 @@ def admin_enrollments():
                    .order_by(Enrollment.enrolled_at.desc()).all())
     users = User.query.filter_by(role='employee').all()
     courses = Course.query.filter_by(is_published=True).order_by(Course.sort_order, Course.id).all()
+    # カリキュラム（category）一覧を表示順で
+    curricula = []
+    seen = set()
+    for c in courses:
+        if c.category and c.category not in seen:
+            seen.add(c.category)
+            curricula.append(c.category)
     return render_template('admin_enrollments.html',
-                           enrollments=enrollments, users=users, courses=courses)
+                           enrollments=enrollments, users=users,
+                           courses=courses, curricula=curricula)
 
 
 @app.route('/admin/enrollments/add', methods=['POST'])
@@ -752,6 +760,28 @@ def add_enrollment():
         db.session.add(Enrollment(user_id=user_id, course_id=course_id))
         db.session.commit()
         flash('受講登録しました', 'success')
+    return redirect(url_for('admin_enrollments'))
+
+
+@app.route('/admin/enrollments/add_curriculum', methods=['POST'])
+@login_required
+def add_curriculum_enrollment():
+    """カリキュラム（category）に属する公開コースを一括で受講登録する。"""
+    if current_user.role != 'skillgrowth':
+        return redirect(url_for('dashboard'))
+    user_id = int(request.form['user_id'])
+    curriculum = request.form.get('curriculum', '')
+    courses = Course.query.filter_by(category=curriculum, is_published=True).all()
+    if not courses:
+        flash('対象のカリキュラムにコースがありません', 'warning')
+        return redirect(url_for('admin_enrollments'))
+    added = 0
+    for course in courses:
+        if not Enrollment.query.filter_by(user_id=user_id, course_id=course.id).first():
+            db.session.add(Enrollment(user_id=user_id, course_id=course.id))
+            added += 1
+    db.session.commit()
+    flash(f'「{curriculum}」の{added}コースを一括で受講登録しました（既存はスキップ）', 'success')
     return redirect(url_for('admin_enrollments'))
 
 
