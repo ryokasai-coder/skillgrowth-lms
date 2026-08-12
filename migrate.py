@@ -47,6 +47,11 @@ def migrate():
         c.execute('ALTER TABLE user ADD COLUMN mfa_enabled BOOLEAN DEFAULT 0')
         migrations.append('user.mfa_enabled')
 
+    # course: sort_order（カリキュラム内の表示順）
+    if not column_exists(c, 'course', 'sort_order'):
+        c.execute('ALTER TABLE course ADD COLUMN sort_order INTEGER DEFAULT 0')
+        migrations.append('course.sort_order')
+
     # enrollment: progress_percent（進捗率）
     if not column_exists(c, 'enrollment', 'progress_percent'):
         c.execute('ALTER TABLE enrollment ADD COLUMN progress_percent INTEGER DEFAULT 0')

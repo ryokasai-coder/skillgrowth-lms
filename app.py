@@ -153,6 +153,7 @@ class Course(db.Model):
     category = db.Column(db.String(100))
     total_hours = db.Column(db.Float, default=0)
     pass_score = db.Column(db.Integer, default=80)
+    sort_order = db.Column(db.Integer, default=0)  # カリキュラム内の表示順（小さいほど先）
     is_published = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     created_by = db.Column(db.Integer, db.ForeignKey('user.id'))
@@ -481,7 +482,7 @@ def dashboard():
                                  CompanyCurriculum.query.filter_by(company_id=current_user.company_id).all()]
             if allowed_curricula:
                 base_q = base_q.filter(Course.category.in_(allowed_curricula))
-        available_courses = base_q.all()
+        available_courses = base_q.order_by(Course.sort_order, Course.id).all()
         return render_template('employee_dashboard.html',
                                enrollments=enrollments, available_courses=available_courses)
 
@@ -510,6 +511,7 @@ def new_course():
             training_type=request.form.get('training_type', ''),
             total_hours=float(request.form.get('total_hours') or 0),
             pass_score=int(request.form.get('pass_score') or 80),
+            sort_order=int(request.form.get('sort_order') or 0),
             created_by=current_user.id
         )
         db.session.add(course)
@@ -532,6 +534,7 @@ def edit_course(course_id):
         course.training_type = request.form.get('training_type', '')
         course.total_hours = float(request.form.get('total_hours') or 0)
         course.pass_score = int(request.form.get('pass_score') or 80)
+        course.sort_order = int(request.form.get('sort_order') or 0)
         course.is_published = 'is_published' in request.form
         db.session.commit()
         flash('コースを更新しました', 'success')
@@ -731,7 +734,7 @@ def admin_enrollments():
                    .join(Course, Enrollment.course_id == Course.id)
                    .order_by(Enrollment.enrolled_at.desc()).all())
     users = User.query.filter_by(role='employee').all()
-    courses = Course.query.filter_by(is_published=True).all()
+    courses = Course.query.filter_by(is_published=True).order_by(Course.sort_order, Course.id).all()
     return render_template('admin_enrollments.html',
                            enrollments=enrollments, users=users, courses=courses)
 

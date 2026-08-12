@@ -43,6 +43,12 @@
               <div class="form-text">点以上で修了</div>
             </div>
           </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">表示順</label>
+            <input type="number" name="sort_order" class="form-control" style="max-width:160px"
+                   value="{{ course.sort_order if course else 0 }}">
+            <div class="form-text">同じカリキュラム内で小さいほど先に表示（例: 第1章=1, 第2章=2 …）</div>
+          </div>
           {% if course %}
           <div class="mb-3 form-check">
             <input type="checkbox" name="is_published" class="form-check-input" id="isPublished"

@@ -440,7 +440,7 @@ def main():
         created_courses = 0
         created_lessons = 0
         updated_lessons = 0
-        for course_title, lessons in chapters:
+        for idx, (course_title, lessons) in enumerate(chapters, start=1):
             course = Course.query.filter_by(title=course_title).first()
             if not course:
                 course = Course(
@@ -448,11 +448,15 @@ def main():
                     category=CURRICULUM,
                     training_type=TRAINING_TYPE,
                     pass_score=PASS_SCORE,
+                    sort_order=idx,
                     is_published=True,
                 )
                 db.session.add(course)
                 db.session.flush()
                 created_courses += 1
+            else:
+                # 既存コースにも表示順を反映（章の並び順を正す）
+                course.sort_order = idx
             for order, (lesson_title, url) in enumerate(lessons, start=1):
                 exists = Lesson.query.filter_by(course_id=course.id, title=lesson_title).first()
                 if exists:

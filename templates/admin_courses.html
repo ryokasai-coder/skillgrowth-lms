@@ -31,7 +31,7 @@
         </tr>
       </thead>
       <tbody>
-        {% for course in cur_courses | sort(attribute='title') %}
+        {% for course in cur_courses | sort(attribute='title') | sort(attribute='sort_order') %}
         {% set completed_count = course.enrollments | selectattr('status', 'equalto', 'completed') | list | length %}
         <tr>
           <td><strong>{{ course.title }}</strong></td>
