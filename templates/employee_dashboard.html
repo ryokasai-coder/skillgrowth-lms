@@ -61,31 +61,9 @@
   {% endfor %}
 </div>
 {% else %}
-<div class="alert alert-info">受講中のコースはありません。</div>
-{% endif %}
-
-{% if available_courses %}
-<h5 class="mb-3">受講可能なコース</h5>
-<div class="row g-3">
-  {% for course in available_courses %}
-  <div class="col-md-6">
-    <div class="card h-100">
-      <div class="card-body">
-        <h6 class="card-title">{{ course.title }}</h6>
-        <div class="small text-muted mb-2">{{ course.category }}</div>
-        <p class="small text-muted mb-3">{{ (course.description or '') | truncate(80) }}</p>
-        <div class="small text-muted mb-3">
-          <i class="bi bi-list-check me-1"></i>{{ course.lessons | length }}レッスン
-        </div>
-        <form method="POST" action="{{ url_for('enroll_course', course_id=course.id) }}">
-          <button type="submit" class="btn btn-sm btn-outline-primary">
-            <i class="bi bi-plus-circle me-1"></i>受講登録
-          </button>
-        </form>
-      </div>
-    </div>
-  </div>
-  {% endfor %}
+<div class="alert alert-info">
+  受講中のコースはありません。<br>
+  <span class="small text-muted">管理者が受講登録すると、ここに表示されます。</span>
 </div>
 {% endif %}
 {% endblock %}

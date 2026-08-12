@@ -17,44 +17,40 @@ from werkzeug.security import generate_password_hash
 
 # ---------- 未視聴制御ロジック ----------
 
-def test_unlocked_gating_logic(seed_course):
+def test_gating_disabled_all_unlocked(seed_course):
+    """運用方針で未視聴制御はOFF。全レッスンが解放される。"""
+    import app as appmod
+    assert appmod.LESSON_GATING_ENABLED is False
     with flask_app.app_context():
         course = db.session.get(Course, seed_course['course_id'])
-        ids = seed_course['lesson_ids']
-        # 未完了0件 → 先頭のみ解放
-        u0 = compute_unlocked_lesson_ids(course, set())
-        assert ids[0] in u0 and ids[1] not in u0
-        # 先頭完了 → 2番目まで解放、3番目はロック
-        u1 = compute_unlocked_lesson_ids(course, {ids[0]})
-        assert ids[1] in u1 and ids[2] not in u1
-        # 順序破り（3番目だけ完了）→ 2番目は解放されない
-        uskip = compute_unlocked_lesson_ids(course, {ids[2]})
-        assert ids[1] not in uskip
+        ids = set(seed_course['lesson_ids'])
+        assert compute_unlocked_lesson_ids(course, set()) == ids  # 何も完了せずとも全解放
 
 
-def test_complete_locked_lesson_returns_403(client, seed_course):
+def test_gating_logic_when_enabled(seed_course):
+    """将来ONにした場合の順次解放ロジックの検証（フラグを一時的に有効化）。"""
+    import app as appmod
+    orig = appmod.LESSON_GATING_ENABLED
+    appmod.LESSON_GATING_ENABLED = True
+    try:
+        with flask_app.app_context():
+            course = db.session.get(Course, seed_course['course_id'])
+            ids = seed_course['lesson_ids']
+            u0 = compute_unlocked_lesson_ids(course, set())
+            assert ids[0] in u0 and ids[1] not in u0
+            u1 = compute_unlocked_lesson_ids(course, {ids[0]})
+            assert ids[1] in u1 and ids[2] not in u1
+    finally:
+        appmod.LESSON_GATING_ENABLED = orig
+
+
+def test_any_lesson_completable_when_gating_off(client, seed_course):
+    """ロックOFFなので、前レッスン未完了でも任意のレッスンを完了/再生できる。"""
     cid = seed_course['course_id']
-    l2 = seed_course['lesson_ids'][1]
+    l2, l3 = seed_course['lesson_ids'][1], seed_course['lesson_ids'][2]
     login(client)
-    r = client.post(f'/courses/{cid}/lessons/{l2}/complete', json={'watch_seconds': 999})
-    assert r.status_code == 403
-
-
-def test_complete_in_order_succeeds(client, seed_course):
-    cid = seed_course['course_id']
-    l1, l2 = seed_course['lesson_ids'][0], seed_course['lesson_ids'][1]
-    login(client)
-    assert client.post(f'/courses/{cid}/lessons/{l1}/complete', json={'watch_seconds': 0}).status_code == 200
-    # 1番目完了後は2番目が解放され成功する
+    assert client.post(f'/courses/{cid}/lessons/{l3}/heartbeat', json={'position_seconds': 5}).status_code == 200
     assert client.post(f'/courses/{cid}/lessons/{l2}/complete', json={'watch_seconds': 0}).status_code == 200
-
-
-def test_heartbeat_locked_lesson_returns_403(client, seed_course):
-    cid = seed_course['course_id']
-    l3 = seed_course['lesson_ids'][2]
-    login(client)
-    r = client.post(f'/courses/{cid}/lessons/{l3}/heartbeat', json={'position_seconds': 5})
-    assert r.status_code == 403
 
 
 # ---------- 受講時間の水増し防止 ----------

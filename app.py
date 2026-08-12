@@ -951,15 +951,20 @@ def ca_reports():
 @app.route('/courses/<int:course_id>/enroll', methods=['POST'])
 @login_required
 def enroll_course(course_id):
-    if not Enrollment.query.filter_by(user_id=current_user.id, course_id=course_id).first():
-        db.session.add(Enrollment(user_id=current_user.id, course_id=course_id))
-        db.session.commit()
-    return redirect(url_for('study_course', course_id=course_id))
+    # 自己受講登録は廃止。受講は管理者による割り当てのみ（直POST対策で拒否）。
+    flash('受講登録は管理者が行います。担当者にご連絡ください。', 'warning')
+    return redirect(url_for('dashboard'))
+
+
+# 未視聴制御（前チャプター完了まで次に進めない）のON/OFF。
+# 運用方針により、受講者はどの動画も自由に視聴できるようにするため無効化。
+LESSON_GATING_ENABLED = False
 
 
 def compute_unlocked_lesson_ids(course, completed_lesson_ids):
-    """未視聴制御: 各レッスンは、順序上の直前レッスンが完了している場合のみ解放する。
-    先頭レッスンは常に解放。助成金要件「前チャプター完了まで次へ進めない」の担保。"""
+    """レッスンの解放判定。LESSON_GATING_ENABLED=False の場合は全レッスンを解放する。"""
+    if not LESSON_GATING_ENABLED:
+        return {lesson.id for lesson in course.lessons}
     unlocked = set()
     prev_completed = True  # 先頭レッスンは常に解放
     for lesson in course.lessons:  # course.lessons は Lesson.order 昇順
