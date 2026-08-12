@@ -271,7 +271,7 @@ https://youtu.be/iMBoBX88ktU
 １１７．成功動画DB化
 https://youtu.be/8ILx1BFAnXY
 １１８．フィードバック運用
-https://youtu.be/MU-vGvoa5ioc
+https://youtu.be/MU-vGvoa5io
 １１９．編集体制構築
 https://youtu.be/74WQZBY2ah0
 １２０．編集自走化フロー
@@ -439,6 +439,7 @@ def main():
     with app.app_context():
         created_courses = 0
         created_lessons = 0
+        updated_lessons = 0
         for course_title, lessons in chapters:
             course = Course.query.filter_by(title=course_title).first()
             if not course:
@@ -455,6 +456,11 @@ def main():
             for order, (lesson_title, url) in enumerate(lessons, start=1):
                 exists = Lesson.query.filter_by(course_id=course.id, title=lesson_title).first()
                 if exists:
+                    # 既存レッスンでもURL・順番がデータと違えば更新（URL修正の再適用に対応）
+                    if exists.video_url != url or exists.order != order:
+                        exists.video_url = url
+                        exists.order = order
+                        updated_lessons += 1
                     continue
                 db.session.add(Lesson(
                     course_id=course.id,
@@ -464,7 +470,7 @@ def main():
                 ))
                 created_lessons += 1
         db.session.commit()
-        print(f'投入完了: 新規コース {created_courses} / 新規レッスン {created_lessons}')
+        print(f'投入完了: 新規コース {created_courses} / 新規レッスン {created_lessons} / URL等更新 {updated_lessons}')
         print(f'現在の総コース数: {Course.query.count()} / 総レッスン数: {Lesson.query.count()}')
 
 
