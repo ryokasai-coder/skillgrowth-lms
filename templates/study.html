@@ -9,14 +9,23 @@
   .lesson-nav .locked-lesson { color:#94a3b8; cursor:not-allowed; pointer-events:none; }
   .completed-icon { color:#16a34a; }
   .video-wrapper { position:relative; padding-bottom:56.25%; height:0; overflow:hidden; background:#000; border-radius:6px; }
-  /* プレイヤー（div/iframe）をラッパーいっぱいに広げる（固定640x390で見切れる不具合の修正） */
-  .video-wrapper > div,
-  .video-wrapper iframe { position:absolute; top:0; left:0; width:100%; height:100%; border:0; }
-  /* チャンネル名・シェア・後で見る等のYouTube上部UIをブロック */
-  .yt-top-guard {
-    position:absolute; top:0; left:0; right:0; height:60px;
-    z-index:5; background:transparent; pointer-events:all;
+  /* プレイヤー本体（div→iframe）だけを全面表示（固定640x390で見切れる不具合の修正） */
+  #yt-player, .video-wrapper iframe { position:absolute; top:0; left:0; width:100%; height:100%; border:0; }
+  /* 独自ポスター：YouTubeのチャンネル名・共有・「YouTubeで見る」等の初期UIを覆い隠す。
+     クリックで再生。再生中は非表示、停止/終了で再表示。 */
+  .yt-poster {
+    position:absolute; inset:0; z-index:6; cursor:pointer;
+    background:#000 center/cover no-repeat;
+    display:flex; align-items:center; justify-content:center;
   }
+  .yt-poster.hidden { display:none; }
+  .yt-play-btn {
+    width:72px; height:72px; border:0; border-radius:50%;
+    background:rgba(0,0,0,.55); color:#fff; font-size:30px; line-height:1;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    box-shadow:0 2px 12px rgba(0,0,0,.4); transition:background .2s;
+  }
+  .yt-poster:hover .yt-play-btn { background:rgba(37,99,235,.9); }
   .content-area { min-height:260px; }
   #system-notice {
     display:none; position:fixed; top:70px; left:50%; transform:translateX(-50%);
@@ -128,7 +137,9 @@
         {% if current_lesson.video_url %}
         <div class="video-wrapper mb-3">
           <div id="yt-player"></div>
-          <div class="yt-top-guard" title=""></div>
+          <div class="yt-poster" id="yt-poster">
+            <button type="button" class="yt-play-btn" id="yt-play-btn" aria-label="再生">&#9658;</button>
+          </div>
         </div>
         {% if current_lesson.id not in completed_lesson_ids %}
         <div class="alert alert-info small py-2 mb-3" id="watch-notice">
@@ -249,12 +260,37 @@ const HEARTBEAT_SEC  = 5;
 const MAX_SPEED      = 1.5;
 const SEEK_TOLERANCE = 3;
 
+let playerReady = false;
+let posterClicked = false;
+
+function hidePoster() {
+  const p = document.getElementById('yt-poster');
+  if (p) p.classList.add('hidden');
+}
+function showPoster() {
+  const p = document.getElementById('yt-poster');
+  if (p) p.classList.remove('hidden');
+}
+
+// ポスター（独自の再生ボタン）クリックで再生。プレイヤー準備前でも意図を記録して準備完了後に再生。
+document.getElementById('yt-poster')?.addEventListener('click', () => {
+  posterClicked = true;
+  if (playerReady && player) {
+    player.playVideo();
+    hidePoster();
+  }
+});
+
 // 動画IDをAPIから取得してからYouTube IFrame APIを読み込む
 fetch(`/courses/${COURSE_ID}/lessons/${LESSON_ID}/video_token`)
   .then(r => r.json())
   .then(data => {
     VIDEO_ID = data.video_id;
     if (!VIDEO_ID) return;
+    // ポスター背景にサムネイルを設定（初期状態のYouTube UIを隠す）
+    const poster = document.getElementById('yt-poster');
+    if (poster) poster.style.backgroundImage =
+      `url(https://img.youtube.com/vi/${VIDEO_ID}/hqdefault.jpg)`;
     const tag = document.createElement('script');
     tag.src = 'https://www.youtube.com/iframe_api';
     document.head.appendChild(tag);
@@ -300,16 +336,27 @@ function onPlayerReady() {
     showNotice(`前回の視聴位置（${Math.floor(RESUME_SEC/60)}分${RESUME_SEC%60}秒）から再開しました`);
   }
   startSpeedPoll();
+  playerReady = true;
+  // 準備前にポスターがクリックされていたら、ここで再生開始
+  if (posterClicked) {
+    player.playVideo();
+    hidePoster();
+  }
 }
 
 function onPlayerStateChange(event) {
   if (event.data === YT.PlayerState.PLAYING) {
+    hidePoster();
     startHeartbeat();
     startSeekPoll();
     resetInactivity();
   } else {
     stopHeartbeat();
     stopSeekPoll();
+    // 一時停止・終了・バッファ以外の停止時はポスターを再表示してYouTube UIを隠す
+    if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
+      showPoster();
+    }
     if (event.data === YT.PlayerState.ENDED && !ALREADY_DONE) {
       sendComplete(Math.floor(player.getDuration()));
     }
