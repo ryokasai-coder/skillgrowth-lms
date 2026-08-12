@@ -2,11 +2,9 @@
 """
 AIリスキリング研修（全13章・72動画）を投入するスクリプト。
 
-章見出しは「基礎【第1章】」「【第3章】」「DX【第9章】」等の形式。
-接頭語（基礎/実装/創造/DX/戦略）があればコース名に付ける:
-  基礎【第1章】 → 第1章：基礎   /   【第3章】 → 第3章
-
-冪等: 既存コース／レッスンはスキップ。既存でも表示順・URLはデータに合わせて更新。
+章見出しは「第N章：サブタイトル」形式。
+冪等: 章はカリキュラム内の表示順(sort_order)で同定するため、章名を後から
+変更して再実行しても、重複を作らず既存コースのタイトルを更新する。
 
 使い方（PythonAnywhereのBashコンソール）:
   cd ~/lms-project && source ~/.virtualenvs/lms-venv/bin/activate
@@ -24,7 +22,7 @@ TRAINING_TYPE = 'eラーニング'
 PASS_SCORE = 80
 
 RAW = r"""
-基礎【第1章】
+第1章：生成AIの全体像
 1,生成AIの正体とLLMの仕組み
 →https://youtu.be/ljb7lDFJm_c
 2,2026年最新AI比較 (Gemini/Claude/GPT)
@@ -33,7 +31,7 @@ RAW = r"""
 →https://youtu.be/E3Qbdo88048
 4,AIが得意なこと・絶対させてはいけないこと
 →https://youtu.be/VDUIJg1WnQ8
-実装【第2章】
+第2章：プロンプト設計基礎
 5,プロンプトの5大要素（深津式を超えて）
 →https://youtu.be/6tmYA43GgWE
 6,Few-shotとChain of Thought
@@ -42,7 +40,7 @@ RAW = r"""
 →https://youtu.be/Lr5sZCJ-HqM
 8,出力形式のコントロール (JSON/Markdown/表)
 →https://youtu.be/R-NMDvrbiJM
-【第3章】
+第3章：文章業務の自動化
 9,メール業務の自動化（状況別5パターン）
 →https://youtu.be/4okdoJzIi58
 10,営業資料のストーリー構成作成
@@ -59,7 +57,7 @@ RAW = r"""
 →https://youtu.be/ofgHUwaZ8dk
 16,多言語翻訳とローカライズの注意点
 →https://youtu.be/M5Uz8WBBhbs
-【第4章】
+第4章：情報整理とリサーチ
 17,AIによる市場調査・トレンド分析
 →https://youtu.be/SW15QSrM71o
 18競合分析とSWOT分析の自動生成
@@ -74,7 +72,7 @@ RAW = r"""
 →https://youtu.be/1vc9ik9Cocs
 23,データの可視化とグラフ解釈
 →https://youtu.be/3ugK0jDumGA
-【第5章】
+第5章：業務オペ改善
 24,日報・週報の自動構造化
 →https://youtu.be/E1fm1idpmsU
 25,プロジェクトのタスク分解技術
@@ -87,7 +85,7 @@ RAW = r"""
 →https://youtu.be/b58JSjIwBY8
 29,カスタマーサポート用FAQ自動作成
 →https://youtu.be/CAvNSTp4DY8
-創造【第6章】
+第6章：画像生成×Canva
 30,DALL-E 3による画像生成の基本
 →https://youtu.be/XTnkmnChBnA
 31,Midjourneyによるプロ級ビジュアル
@@ -98,7 +96,7 @@ RAW = r"""
 →https://youtu.be/4_owlNtmZ40
 34プレゼン資料のビジュアル化戦略,
 https://youtu.be/s6kozY65XDI
-【第7章】
+第7章：動画生成とショート動画
 35,動画用AI台本と構成案の作成
 →https://youtu.be/8VcWr1MjBA0
 36,Vrewによる爆速字幕・カット編集
@@ -107,7 +105,7 @@ https://youtu.be/s6kozY65XDI
 →https://youtu.be/aemfha_L0hA
 38,SNS用ショート動画の量産フロー
 →https://youtu.be/dS4vUUq2xGI
-【第8章】
+第8章：SNS×生成AI戦略
 39,Instagram投稿のAI設計術
 →https://youtu.be/vTTyjWi1pTk
 40,TikTok/Reelsのトレンド解析と適用
@@ -116,21 +114,21 @@ https://youtu.be/s6kozY65XDI
 →https://youtu.be/xMxoynsIf0c
 42,AIによるコンテンツカレンダー作成
 →https://youtu.be/y74Hf8mv5gk
-DX【第9章】
+第9章：業務にAIを組み込む法
 43,業務分解とAI接続の判断基準
 →https://youtu.be/kmcID3QXb_I
 44,AI接続の基本パターン（RAG/API）
 →https://youtu.be/ywuyV1NEIW0
 45,既存業務フローへのAI組み込み実践
 →https://youtu.be/628kYPE3R6w
-【第10章】
+第10章：セキュリティとリスク
 46,生成AI時代の情報漏洩リスクと対策
 →https://youtu.be/LamART4euNg
 47,社内利用ガイドラインの策定
 →https://youtu.be/VWRfIi2frtM
 48,プロンプト資産の管理と共有
 →https://youtu.be/ssOH60g4LC0
-【第11章】
+第11章：部署別AI活用モデル
 49,【営業】見込み客リストの自動生成
 →https://youtu.be/FWuyRme_VFQ
 50,【営業】パーソナライズDMの自動作成
@@ -161,7 +159,7 @@ DX【第9章】
 →https://youtu.be/8hadP6PLcKI
 63,【経営企画】月次レポートの自動要約
 →https://youtu.be/CQ853ebg5z0
-戦略【第12章】
+第12章：AI時代の思考法
 64,AI前提の仕事設計（AI-First Mindset）
 →https://youtu.be/Z-OQVyoiIxI
 65,人間にしかできない価値の再定義
@@ -170,7 +168,7 @@ DX【第9章】
 →https://youtu.be/roThHuHd1sg
 67,リスキリングを継続する仕組み作り
 →https://youtu.be/KbXAsy4IyZY
-【第13章】
+第13章：AI導入ロードマップ
 68,AI導入の3ステップ（PoC/導入/定着）
 →https://youtu.be/_ROu-scga40
 69,AI活用のKPI・投資対効果の測定
@@ -183,7 +181,7 @@ DX【第9章】
 →https://youtu.be/2A4cpg0Z_e0
 """
 
-CHAPTER_RE = re.compile(r'^(.*?)【第([0-9０-９.]+)章】')
+CHAPTER_RE = re.compile(r'^第[0-9０-９.]+章')
 NUM_PREFIX = re.compile(r'^[0-9０-９]+[\s,，、.．]*')
 URL_RE = re.compile(r'https?://\S+')
 
@@ -199,7 +197,7 @@ def parse(raw):
     pending_title = None
     for line in raw.splitlines():
         line = line.strip()
-        if not line:
+        if not line or line.startswith('コース名'):
             continue
         # URL行（→や空白始まり、または直接http）
         if 'youtu.be' in line or line.startswith('http') or line.startswith('→'):
@@ -208,17 +206,12 @@ def parse(raw):
                 current[1].append((_clean_title(pending_title), m.group(0)))
             pending_title = None
             continue
-        # 章見出し
-        cm = CHAPTER_RE.match(line)
-        if cm:
-            phase = cm.group(1).strip()
-            num = cm.group(2)
-            title = f'第{num}章' + (f'：{phase}' if phase else '')
-            current = (title, [])
+        # 章見出し（第N章：…）
+        if CHAPTER_RE.match(line):
+            current = (line, [])
             chapters.append(current)
             pending_title = None
             continue
-        # それ以外はタイトル行
         pending_title = line
     return chapters
 
@@ -228,9 +221,12 @@ def main():
     total = sum(len(c[1]) for c in chapters)
     print(f'解析結果: {len(chapters)}章 / {total}動画')
     with app.app_context():
-        cc = cl = ul = 0
+        cc = cl = ul = renamed = 0
         for idx, (course_title, lessons) in enumerate(chapters, start=1):
-            course = Course.query.filter_by(title=course_title, category=CURRICULUM).first()
+            # 章の同定はカリキュラム内の表示順で行う（章名変更に強い）
+            course = Course.query.filter_by(category=CURRICULUM, sort_order=idx).first()
+            if not course:
+                course = Course.query.filter_by(category=CURRICULUM, title=course_title).first()
             if not course:
                 course = Course(title=course_title, category=CURRICULUM,
                                 training_type=TRAINING_TYPE, pass_score=PASS_SCORE,
@@ -239,6 +235,9 @@ def main():
                 db.session.flush()
                 cc += 1
             else:
+                if course.title != course_title:
+                    course.title = course_title
+                    renamed += 1
                 course.sort_order = idx
             for order, (lt, url) in enumerate(lessons, start=1):
                 ex = Lesson.query.filter_by(course_id=course.id, title=lt).first()
@@ -251,7 +250,7 @@ def main():
                 db.session.add(Lesson(course_id=course.id, title=lt, video_url=url, order=order))
                 cl += 1
         db.session.commit()
-        print(f'投入完了: 新規コース {cc} / 新規レッスン {cl} / 更新 {ul}')
+        print(f'投入完了: 新規コース {cc} / 新規レッスン {cl} / レッスン更新 {ul} / 章名更新 {renamed}')
         print(f'AIリスキリング研修のコース数: '
               f'{Course.query.filter_by(category=CURRICULUM).count()}')
         print(f'全体: 総コース {Course.query.count()} / 総レッスン {Lesson.query.count()}')
