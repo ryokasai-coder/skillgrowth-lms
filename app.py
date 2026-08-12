@@ -37,6 +37,8 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 # HTTPS 配信時は環境変数 LMS_HTTPS=1 を設定して Secure 属性を有効化する
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('LMS_HTTPS') == '1'
+# ログイン画面の初期パスワードヒントは開発時のみ表示（公開サイトでは隠す）
+app.config['SHOW_LOGIN_HINT'] = os.environ.get('FLASK_DEBUG') == '1'
 
 @app.template_filter('fromjson')
 def fromjson_filter(s):
@@ -1460,21 +1462,68 @@ def admin_quiz_history(course_id):
 _JP_FONTS_REGISTERED = False
 
 def _ensure_jp_fonts():
+    """日本語フォントを登録する（Windows/Linux両対応）。
+    各論理名（JpGothic/JpMincho）につき、見つかった最初のフォントを1つ登録する。
+    優先順位: 環境変数 LMS_JP_FONT_PATH → リポジトリ同梱 fonts/ → OS標準の探索。"""
     global _JP_FONTS_REGISTERED
     if _JP_FONTS_REGISTERED:
         return
-    candidates = [
-        ('JpMincho', r'C:\Windows\Fonts\yumin.ttf', None),
-        ('JpMincho', r'C:\Windows\Fonts\msmincho.ttc', 0),
-        ('JpGothic', r'C:\Windows\Fonts\YuGothR.ttc', 0),
-        ('JpGothic', r'C:\Windows\Fonts\msgothic.ttc', 0),
+
+    fonts_dir = os.path.join(os.path.dirname(__file__), 'fonts')
+    bundled = []
+    if os.path.isdir(fonts_dir):
+        for fn in sorted(os.listdir(fonts_dir)):
+            if fn.lower().endswith(('.ttf', '.ttc')):
+                bundled.append(os.path.join(fonts_dir, fn))
+
+    env_font = os.environ.get('LMS_JP_FONT_PATH')
+
+    # (path, subfontIndex)。上から順に試し、登録できた時点でその論理名は確定。
+    gothic_candidates = (
+        ([(env_font, None)] if env_font else []) +
+        [(p, None) for p in bundled] +
+        [
+            # Linux（Noto CJK / IPA / Takao / VL など）
+            ('/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc', 0),
+            ('/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc', 0),
+            ('/usr/share/fonts/truetype/fonts-japanese-gothic.ttf', None),
+            ('/usr/share/fonts/truetype/ipafont-gothic/ipagp.ttf', None),
+            ('/usr/share/fonts/truetype/ipaexfont-gothic/ipaexg.ttf', None),
+            ('/usr/share/fonts/truetype/takao-gothic/TakaoPGothic.ttf', None),
+            ('/usr/share/fonts/truetype/vlgothic/VL-PGothic-Regular.ttf', None),
+            # Windows
+            (r'C:\Windows\Fonts\YuGothR.ttc', 0),
+            (r'C:\Windows\Fonts\msgothic.ttc', 0),
+            # macOS
+            ('/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc', 0),
+        ]
+    )
+    mincho_candidates = [
+        ('/usr/share/fonts/truetype/fonts-japanese-mincho.ttf', None),
+        ('/usr/share/fonts/truetype/ipafont-mincho/ipam.ttf', None),
+        ('/usr/share/fonts/truetype/ipaexfont-mincho/ipaexm.ttf', None),
+        (r'C:\Windows\Fonts\yumin.ttf', None),
+        (r'C:\Windows\Fonts\msmincho.ttc', 0),
     ]
-    for name, path, idx in candidates:
-        try:
-            kw = {'subfontIndex': idx} if idx is not None else {}
-            pdfmetrics.registerFont(TTFont(name, path, **kw))
-        except Exception:
-            pass
+
+    def _register_first(logical_name, cands):
+        for path, idx in cands:
+            if not path or not os.path.exists(path):
+                continue
+            try:
+                kw = {'subfontIndex': idx} if idx is not None else {}
+                pdfmetrics.registerFont(TTFont(logical_name, path, **kw))
+                return True
+            except Exception:
+                continue
+        return False
+
+    _register_first('JpGothic', gothic_candidates)
+    # 明朝が見つからなければゴシックで代用（PDF全体が豆腐化するより望ましい）
+    if not _register_first('JpMincho', mincho_candidates):
+        if 'JpGothic' in pdfmetrics.getRegisteredFontNames():
+            gpath_ok = _register_first('JpMincho', gothic_candidates)
+            _ = gpath_ok
     _JP_FONTS_REGISTERED = True
 
 
