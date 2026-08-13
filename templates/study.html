@@ -11,6 +11,9 @@
   .video-wrapper { position:relative; padding-bottom:56.25%; height:0; overflow:hidden; background:#000; border-radius:6px; }
   /* プレイヤー本体（div→iframe）だけを全面表示（固定640x390で見切れる不具合の修正） */
   #yt-player, .video-wrapper iframe { position:absolute; top:0; left:0; width:100%; height:100%; border:0; }
+  /* iframe（YouTube）へのマウス操作を完全遮断。ホバー時のコントロール/共有/後で見る/字幕UIを出さない。
+     再生・一時停止は下のガード/ポスターの独自ボタン経由でJS APIから行う。 */
+  .video-wrapper iframe { pointer-events:none; }
   /* 独自ポスター：YouTubeのチャンネル名・共有・「YouTubeで見る」等の初期UIを覆い隠す。
      クリックで再生。再生中は非表示、停止/終了で再表示。 */
   .yt-poster {
@@ -19,8 +22,9 @@
     display:flex; align-items:center; justify-content:center;
   }
   .yt-poster.hidden { display:none; }
-  /* 再生中の透明ガード（YouTubeのホバーUI＝共有/後で見る/チャンネル名を遮蔽）。クリックで一時停止 */
-  .yt-guard { position:absolute; inset:0; z-index:6; cursor:pointer; background:transparent; }
+  /* 常時前面の透明ガード。iframeへのクリックを奪い、再生中はここをクリックで一時停止。
+     ポスター(z-index:6)より下(z-index:5)。未再生・一時停止時はポスターが上に被さる。 */
+  .yt-guard { position:absolute; inset:0; z-index:5; cursor:pointer; background:transparent; }
   .yt-guard.hidden { display:none; }
   .yt-play-btn {
     width:72px; height:72px; border:0; border-radius:50%;
@@ -140,8 +144,8 @@
         {% if current_lesson.video_url %}
         <div class="video-wrapper mb-3">
           <div id="yt-player"></div>
-          <!-- 再生中：透明ガードでYouTubeの共有/後で見る/チャンネル名を隠す。クリックで一時停止 -->
-          <div class="yt-guard hidden" id="yt-guard"></div>
+          <!-- 常時前面の透明ガード。iframeへの操作を奪い、再生中はクリックで一時停止 -->
+          <div class="yt-guard" id="yt-guard"></div>
           <!-- 停止/初期：ポスターで初期UIを隠す。クリックで再生 -->
           <div class="yt-poster" id="yt-poster">
             <button type="button" class="yt-play-btn" id="yt-play-btn" aria-label="再生">&#9658;</button>
@@ -285,10 +289,15 @@ function hideGuard() {
   const g = document.getElementById('yt-guard');
   if (g) g.classList.add('hidden');
 }
-// 字幕（キャプション）を無効化。再読み込みされることがあるので都度呼ぶ。
+// 字幕（キャプション）を無効化。モジュールが遅れてロード／再読み込みされることがあるため、
+// 呼ぶたびに時間差で複数回unloadして確実に消す。
 function killCaptions() {
-  try { player.unloadModule('captions'); } catch (e) {}
-  try { player.unloadModule('cc'); } catch (e) {}
+  [0, 300, 800, 1500, 3000].forEach(delay => setTimeout(() => {
+    if (!player) return;
+    try { player.unloadModule('captions'); } catch (e) {}
+    try { player.unloadModule('cc'); } catch (e) {}
+    try { player.setOption('captions', 'track', {}); } catch (e) {}
+  }, delay));
 }
 // 再生中ガードのクリックで一時停止（→ポスター表示に戻る）
 document.getElementById('yt-guard')?.addEventListener('click', () => {
@@ -379,9 +388,9 @@ function onPlayerStateChange(event) {
   } else {
     stopHeartbeat();
     stopSeekPoll();
-    // 一時停止・終了時はガードを外し、ポスターでYouTube UIを隠す
+    // 一時停止・終了時は不透明ポスターを被せてYouTubeのオーバーレイ（共有/後で見る/字幕）を隠す。
+    // ガードは常時維持（外さない）＝一瞬でもYouTube UIが露出する隙を作らない。
     if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
-      hideGuard();
       showPoster();
     }
     if (event.data === YT.PlayerState.ENDED && !ALREADY_DONE) {
