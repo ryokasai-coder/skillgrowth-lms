@@ -69,9 +69,24 @@
     .badge-in-progress { background: #dbeafe; color: #1e40af; }
     .badge-enrolled { background: #f1f5f9; color: #475569; }
     .progress-bar-lms { background: var(--primary); }
+    .menu-toggle { display: none; }
+    .sidebar-overlay { display: none; }
     @media (max-width: 768px) {
-      .sidebar { display: none; }
+      /* サイドバーは消さず、画面外へ退避。ハンバーガーでスライドイン */
+      .sidebar {
+        transform: translateX(-100%);
+        transition: transform .25s ease;
+        box-shadow: 2px 0 16px rgba(0,0,0,.35);
+      }
+      .sidebar.open { transform: translateX(0); }
       .main-content, .topbar { margin-left: 0; }
+      .main-content { padding: 1rem; }
+      .topbar { padding: .6rem 0.9rem; }
+      .menu-toggle { display: inline-flex; }
+      .sidebar-overlay {
+        position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 99;
+      }
+      .sidebar-overlay.show { display: block; }
     }
   </style>
   {% block head %}{% endblock %}
@@ -126,21 +141,28 @@
   </nav>
 
   <div class="topbar">
-    <div class="fw-semibold text-secondary">{% block page_title %}{% endblock %}</div>
+    <div class="d-flex align-items-center gap-2" style="min-width:0">
+      {% if current_user.is_authenticated %}
+      <button class="btn btn-sm btn-outline-secondary menu-toggle" id="menuToggle" aria-label="メニューを開く">
+        <i class="bi bi-list"></i>
+      </button>
+      {% endif %}
+      <div class="fw-semibold text-secondary text-truncate">{% block page_title %}{% endblock %}</div>
+    </div>
     {% if current_user.is_authenticated %}
-    <div class="d-flex align-items-center gap-3">
+    <div class="d-flex align-items-center gap-2 flex-shrink-0">
       <span class="text-secondary small">
         <i class="bi bi-person-circle me-1"></i>
-        {{ current_user.full_name or current_user.username }}
-        {% if current_user.role == 'skillgrowth' %}<span class="badge bg-primary ms-1">Skillgrowth</span>
-        {% elif current_user.role == 'company_admin' %}<span class="badge bg-success ms-1">会社管理者</span>{% endif %}
+        <span class="d-none d-sm-inline">{{ current_user.full_name or current_user.username }}</span>
+        {% if current_user.role == 'skillgrowth' %}<span class="badge bg-primary ms-1 d-none d-sm-inline">Skillgrowth</span>
+        {% elif current_user.role == 'company_admin' %}<span class="badge bg-success ms-1 d-none d-sm-inline">会社管理者</span>{% endif %}
       </span>
       <a href="{{ url_for('mfa_setup') }}" class="btn btn-sm btn-outline-secondary" title="多要素認証の設定">
         <i class="bi bi-shield-lock"></i>
-        {% if current_user.mfa_enabled %}<span class="text-success">MFA有効</span>{% else %}MFA設定{% endif %}
+        {% if current_user.mfa_enabled %}<span class="text-success d-none d-md-inline">MFA有効</span>{% else %}<span class="d-none d-md-inline">MFA設定</span>{% endif %}
       </a>
-      <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline-secondary">
-        <i class="bi bi-box-arrow-right"></i> ログアウト
+      <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline-secondary" title="ログアウト">
+        <i class="bi bi-box-arrow-right"></i> <span class="d-none d-md-inline">ログアウト</span>
       </a>
     </div>
     {% endif %}
