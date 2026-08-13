@@ -53,9 +53,14 @@
 </div>
 
 <div class="card">
-  <div class="card-header bg-white fw-semibold d-flex justify-content-between">
+  <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
     <span><i class="bi bi-journal-text me-2"></i>受講ログ一覧（最新500件）</span>
-    <span class="text-muted small">{{ logs | length }}件</span>
+    <span class="d-flex align-items-center gap-2">
+      <button type="button" id="ip-toggle" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-eye-slash me-1"></i>IPアドレスを非表示
+      </button>
+      <span class="text-muted small">{{ logs | length }}件</span>
+    </span>
   </div>
   <div class="card-body p-0">
     {% if logs %}
@@ -71,7 +76,7 @@
             <th>視聴開始</th>
             <th>視聴終了</th>
             <th>視聴時間</th>
-            <th>IPアドレス</th>
+            <th class="ip-col">IPアドレス</th>
           </tr>
         </thead>
         <tbody>
@@ -94,7 +99,7 @@
                 {{ s }}秒
               {% endif %}
             </td>
-            <td class="text-muted">{{ log.ip_address or '-' }}</td>
+            <td class="text-muted ip-col">{{ log.ip_address or '-' }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -121,4 +126,31 @@
     </ul>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// IPアドレス列の表示/非表示トグル。状態はブラウザに記憶（既定は表示）。
+(function () {
+  const KEY = 'admin_logs_ip_hidden';
+  const btn = document.getElementById('ip-toggle');
+  function apply(hidden) {
+    document.querySelectorAll('.ip-col').forEach(el => {
+      el.style.display = hidden ? 'none' : '';
+    });
+    if (btn) {
+      btn.innerHTML = hidden
+        ? '<i class="bi bi-eye me-1"></i>IPアドレスを表示'
+        : '<i class="bi bi-eye-slash me-1"></i>IPアドレスを非表示';
+    }
+  }
+  let hidden = localStorage.getItem(KEY) === '1';
+  apply(hidden);
+  btn?.addEventListener('click', () => {
+    hidden = !hidden;
+    localStorage.setItem(KEY, hidden ? '1' : '0');
+    apply(hidden);
+  });
+})();
+</script>
 {% endblock %}
