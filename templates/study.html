@@ -46,8 +46,8 @@
 <div id="system-notice" class="alert alert-warning shadow py-2 px-4 small"></div>
 
 <div class="row g-3">
-  <!-- サイドバー -->
-  <div class="col-md-3">
+  <!-- サイドバー（スマホでは動画の下に回す） -->
+  <div class="col-md-3 order-2 order-md-1">
     <div class="card">
       <div class="card-header bg-white fw-semibold small">コンテンツ</div>
       <div class="list-group list-group-flush lesson-nav">
@@ -124,8 +124,8 @@
     </div>
   </div>
 
-  <!-- メインコンテンツ -->
-  <div class="col-md-9">
+  <!-- メインコンテンツ（スマホでは先頭に表示） -->
+  <div class="col-md-9 order-1 order-md-2">
     {% if current_lesson %}
     <div class="card">
       <div class="card-header bg-white d-flex justify-content-between align-items-center">
@@ -299,6 +299,14 @@ function killCaptions() {
     try { player.setOption('captions', 'track', {}); } catch (e) {}
   }, delay));
 }
+// Chromeのメディアハブ（Global Media Controls）からのシーク/早送りを無効化する。
+// 別オリジンiframeでは効かない場合があるため、seekPollとサーバ側の視聴率チェックと併用する。
+function lockMediaSession() {
+  if (!('mediaSession' in navigator)) return;
+  ['seekforward', 'seekbackward', 'seekto', 'nexttrack', 'previoustrack'].forEach(action => {
+    try { navigator.mediaSession.setActionHandler(action, function () {}); } catch (e) {}
+  });
+}
 // 再生中ガードのクリックで一時停止（→ポスター表示に戻る）
 document.getElementById('yt-guard')?.addEventListener('click', () => {
   if (player && player.pauseVideo) player.pauseVideo();
@@ -369,6 +377,7 @@ function onPlayerReady() {
   }
   startSpeedPoll();
   killCaptions();
+  lockMediaSession();
   playerReady = true;
   // 準備前にポスターがクリックされていたら、ここで再生開始
   if (posterClicked) {
@@ -384,6 +393,7 @@ function onPlayerStateChange(event) {
     // 自動再生ポリシーでミュート状態になることがあるため、再生開始時に必ず音声を有効化
     try { player.unMute(); } catch (e) {}
     killCaptions();    // 字幕が再読み込みされる場合があるので再度無効化
+    lockMediaSession();
     startHeartbeat();
     startSeekPoll();
     resetInactivity();
@@ -502,7 +512,16 @@ function sendComplete(totalWatchSec) {
     body: JSON.stringify({ watch_seconds: totalWatchSec })
   })
   .then(r => r.json())
-  .then(() => {
+  .then((d) => {
+    // サーバがスキップ等を検知して完了を拒否した場合
+    if (!d.ok) {
+      showNotice(d.error || 'この動画はまだ完了できません。最後まで視聴してください。');
+      if (btn) {
+        btn.className = 'btn btn-secondary btn-sm';
+        btn.innerHTML = '<i class="bi bi-hourglass me-1"></i>動画視聴後に自動完了';
+      }
+      return;
+    }
     if (btn) {
       btn.className = 'btn btn-success btn-sm';
       btn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>完了済み';

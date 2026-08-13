@@ -1174,11 +1174,20 @@ def complete_lesson(course_id, lesson_id):
         db.session.add(progress)
 
     if not progress.is_completed:
+        lesson = Lesson.query.filter_by(id=lesson_id, course_id=course_id).first()
+        # スキップ対策（動画レッスンのみ）: 実視聴秒数（heartbeat実測）が動画長の9割未満なら完了を拒否。
+        # メディアハブ等での早送り・シークで終端に飛んでも、実視聴が不足していれば完了させない。
+        if lesson and lesson.video_url:
+            dur = lesson.duration_seconds or 0
+            watched = progress.actual_watch_seconds or 0
+            if dur > 0 and watched < int(dur * 0.9):
+                return jsonify({'ok': False,
+                                'error': '動画を最後まで視聴していません（スキップ・早送りは無効です）'}), 403
+
         progress.is_completed = True
         progress.completed_at = datetime.utcnow()
         # ハートビートで積算した値より完了時点の秒数の方が大きければ更新。
         # 改ざん防止: クライアント申告値は動画長を上限にして水増しを防ぐ。
-        lesson = Lesson.query.filter_by(id=lesson_id, course_id=course_id).first()
         cap = (lesson.duration_seconds or 0) if lesson else 0
         capped_final = min(final_seconds, cap) if cap > 0 else final_seconds
         if capped_final > (progress.actual_watch_seconds or 0):
