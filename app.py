@@ -1666,18 +1666,18 @@ def _build_certificate_canvas(title_label, curriculum, course_title, lesson_titl
     hline(line_y - 49*mm, 120, lw=0.8)
 
     # 本文
-    body_y = line_y - 79*mm
+    body_y = line_y - 70*mm
     c.setFont(MINCHO, 12)
     c.drawCentredString(cx, body_y, 'あなたは頭書の講座における所定の課程を修了されたため、')
     c.drawCentredString(cx, body_y - 14*mm, 'ここにその修了を証します。')
 
-    # 発行情報
-    info_y = body_y - 44*mm
+    # 発行情報（ページ下部に固定配置。講座名・動画名の有無に依らず枠内へ収める）
     info_x = cx + 20*mm
     c.setFont(MINCHO, 11)
-    c.drawCentredString(info_x, info_y, completed_str)
-    c.drawCentredString(info_x, info_y - 13*mm, 'Skill Growth 合同会社')
-    c.drawCentredString(info_x, info_y - 26*mm, '代表社員　紙谷正平')
+    c.setFillColor(BLACK)
+    c.drawCentredString(info_x, 48*mm, '発行日　' + completed_str)
+    c.drawCentredString(info_x, 38*mm, 'Skill Growth 合同会社')
+    c.drawCentredString(info_x, 28*mm, '代表社員　紙谷　正平')
 
     c.save()
     buf.seek(0)
