@@ -33,6 +33,23 @@
     box-shadow:0 2px 12px rgba(0,0,0,.4); transition:background .2s;
   }
   .yt-poster:hover .yt-play-btn { background:rgba(37,99,235,.9); }
+  /* 独自の全画面ボタン（ガード/ポスターより前面）。スキップ防止を保ったまま拡大表示 */
+  .btn-fullscreen {
+    position:absolute; right:10px; bottom:10px; z-index:7;
+    width:40px; height:40px; border:0; border-radius:6px;
+    background:rgba(0,0,0,.55); color:#fff; font-size:17px;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .btn-fullscreen:hover { background:rgba(37,99,235,.9); }
+  /* Fullscreen API使用時：16:9トリックを解除して画面いっぱいに */
+  .video-wrapper:fullscreen { padding-bottom:0; width:100%; height:100%; }
+  .video-wrapper:fullscreen #yt-player,
+  .video-wrapper:fullscreen iframe { width:100%; height:100%; }
+  /* 擬似全画面（iOS等でFullscreen API不可の場合のフォールバック） */
+  .video-wrapper.pseudo-fs {
+    position:fixed; inset:0; z-index:9999;
+    padding-bottom:0; width:100vw; height:100vh; border-radius:0;
+  }
   .content-area { min-height:260px; }
   #system-notice {
     display:none; position:fixed; top:70px; left:50%; transform:translateX(-50%);
@@ -150,6 +167,10 @@
           <div class="yt-poster" id="yt-poster">
             <button type="button" class="yt-play-btn" id="yt-play-btn" aria-label="再生">&#9658;</button>
           </div>
+          <!-- 独自の全画面ボタン（スマホは端末を横にすると横全画面で視聴可能） -->
+          <button type="button" class="btn-fullscreen" id="fsBtn" title="全画面表示" aria-label="全画面表示">
+            <i class="bi bi-arrows-fullscreen"></i>
+          </button>
         </div>
         {% if current_lesson.id not in completed_lesson_ids %}
         <div class="alert alert-info small py-2 mb-3" id="watch-notice">
