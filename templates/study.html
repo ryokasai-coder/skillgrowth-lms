@@ -342,6 +342,41 @@ document.getElementById('yt-poster')?.addEventListener('click', () => {
   }
 });
 
+// ===== 全画面表示（独自ボタン）=====
+// ガードが乗ったまま拡大するので、シーク/スキップ防止は全画面中も維持される。
+const fsBtn = document.getElementById('fsBtn');
+const videoWrapper = document.querySelector('.video-wrapper');
+function isFsActive() {
+  return document.fullscreenElement === videoWrapper ||
+         (videoWrapper && videoWrapper.classList.contains('pseudo-fs'));
+}
+function enterFullscreen() {
+  const req = videoWrapper.requestFullscreen || videoWrapper.webkitRequestFullscreen;
+  if (req) {
+    Promise.resolve(req.call(videoWrapper)).then(() => {
+      try { screen.orientation.lock('landscape'); } catch (e) {}
+    }).catch(() => videoWrapper.classList.add('pseudo-fs'));
+  } else {
+    videoWrapper.classList.add('pseudo-fs');  // iOS等のフォールバック
+  }
+}
+function exitFullscreen() {
+  try { screen.orientation.unlock(); } catch (e) {}
+  if (document.fullscreenElement) {
+    if (document.exitFullscreen) document.exitFullscreen();
+  } else {
+    videoWrapper.classList.remove('pseudo-fs');
+  }
+}
+if (fsBtn) fsBtn.addEventListener('click', () => {
+  isFsActive() ? exitFullscreen() : enterFullscreen();
+});
+document.addEventListener('fullscreenchange', () => {
+  const icon = fsBtn && fsBtn.querySelector('i');
+  if (icon) icon.className = document.fullscreenElement
+    ? 'bi bi-fullscreen-exit' : 'bi bi-arrows-fullscreen';
+});
+
 // 動画IDをAPIから取得してからYouTube IFrame APIを読み込む
 fetch(`/courses/${COURSE_ID}/lessons/${LESSON_ID}/video_token`)
   .then(r => r.json())
