@@ -381,6 +381,8 @@ function onPlayerStateChange(event) {
   if (event.data === YT.PlayerState.PLAYING) {
     hidePoster();
     showGuard();       // 再生中はガードでYouTubeのホバーUIを隠す
+    // 自動再生ポリシーでミュート状態になることがあるため、再生開始時に必ず音声を有効化
+    try { player.unMute(); } catch (e) {}
     killCaptions();    // 字幕が再読み込みされる場合があるので再度無効化
     startHeartbeat();
     startSeekPoll();
