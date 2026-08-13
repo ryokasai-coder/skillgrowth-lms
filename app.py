@@ -1133,7 +1133,13 @@ def lesson_heartbeat(course_id, lesson_id):
         else:
             elapsed = HEARTBEAT_INTERVAL  # 初回は想定間隔ぶんだけ加算
         increment = int(round(max(0, min(elapsed, MAX_INCREMENT))))
-        progress.actual_watch_seconds = (progress.actual_watch_seconds or 0) + increment
+        # 巻き戻しての見直しでも「1レッスンの視聴時間」が動画全長を超えないよう上限を設ける。
+        lesson = Lesson.query.filter_by(id=lesson_id, course_id=course_id).first()
+        cap = (lesson.duration_seconds or 0) if lesson else 0
+        cur = progress.actual_watch_seconds or 0
+        if cap > 0:
+            increment = max(0, min(increment, cap - cur))
+        progress.actual_watch_seconds = cur + increment
         enrollment.total_study_seconds = (enrollment.total_study_seconds or 0) + increment
     progress.last_heartbeat_at = now
     db.session.commit()
