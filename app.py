@@ -1210,6 +1210,10 @@ def complete_lesson(course_id, lesson_id):
         total_lessons = len(course.lessons)
         done = len(completed_ids | {lesson_id})
         enrollment.progress_percent = int(done / total_lessons * 100) if total_lessons else 0
+        # テストの無いコースは全レッスン視聴完了で修了扱いにする（テスト不要方針）。
+        if total_lessons > 0 and done == total_lessons and not course.quizzes:
+            enrollment.status = 'completed'
+            enrollment.completed_at = datetime.utcnow()
         db.session.commit()
 
     return jsonify({'ok': True, 'total_seconds': enrollment.total_study_seconds,
