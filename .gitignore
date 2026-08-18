@@ -13,3 +13,8 @@ backups/
 *.log
 app.log
 app_err.log
+# 受講者の実データCSV（氏名・メール・初期パスワード等のPIIを含む）は絶対にコミットしない。
+# テンプレート（サンプル値のみ）だけは追跡する。
+employees*.csv
+roster*.csv
+!employees_template.csv
