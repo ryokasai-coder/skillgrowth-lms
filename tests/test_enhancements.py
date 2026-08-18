@@ -1,7 +1,7 @@
 """機能強化（ログイン試行制限・進捗率%保存・MFA）の回帰テスト。"""
 import pyotp
 
-from conftest import login
+from conftest import login, set_watched
 from app import (app as flask_app, db, User, Enrollment)
 from werkzeug.security import generate_password_hash
 
@@ -48,10 +48,13 @@ def test_progress_percent_persisted(client, seed_course):
     cid = seed_course['course_id']
     l1, l2 = seed_course['lesson_ids'][0], seed_course['lesson_ids'][1]
     login(client)
-    client.post(f'/courses/{cid}/lessons/{l1}/complete', json={'watch_seconds': 0})
+    # 動画レッスンはスキップ防止を満たす必要があるため満視聴済みにしてから完了する。
+    set_watched(cid, l1)
+    assert client.post(f'/courses/{cid}/lessons/{l1}/complete', json={'watch_seconds': 0}).status_code == 200
     with flask_app.app_context():
         enr = Enrollment.query.filter_by(course_id=cid).first()
         assert enr.progress_percent == 33  # 1/3
+    set_watched(cid, l2)
     client.post(f'/courses/{cid}/lessons/{l2}/complete', json={'watch_seconds': 0})
     with flask_app.app_context():
         enr = Enrollment.query.filter_by(course_id=cid).first()

@@ -9,7 +9,7 @@
 """
 from datetime import datetime
 
-from conftest import login
+from conftest import login, set_watched
 from app import (app as flask_app, db, compute_unlocked_lesson_ids,
                  Course, Lesson, User, Enrollment, LessonProgress, LoginSession)
 from werkzeug.security import generate_password_hash
@@ -50,6 +50,9 @@ def test_any_lesson_completable_when_gating_off(client, seed_course):
     l2, l3 = seed_course['lesson_ids'][1], seed_course['lesson_ids'][2]
     login(client)
     assert client.post(f'/courses/{cid}/lessons/{l3}/heartbeat', json={'position_seconds': 5}).status_code == 200
+    # 動画レッスンなのでスキップ防止を満たすため満視聴済みにしてから完了する。
+    # 前レッスン(l1)は未完了のままだが、ロックOFFなら l2 を完了できることを確認する。
+    set_watched(cid, l2)
     assert client.post(f'/courses/{cid}/lessons/{l2}/complete', json={'watch_seconds': 0}).status_code == 200
 
 
@@ -71,10 +74,14 @@ def test_complete_watch_seconds_capped_by_video_length(client, seed_course):
     cid = seed_course['course_id']
     l1 = seed_course['lesson_ids'][0]  # duration_seconds=600
     login(client)
-    client.post(f'/courses/{cid}/lessons/{l1}/complete', json={'watch_seconds': 999999})
+    # スキップ防止の下限(9割=540秒)まで実視聴済みにしてから、過大申告(999999)で完了。
+    # クライアント申告値が動画長(600)で頭打ちになることを検証する。
+    set_watched(cid, l1, 540)
+    r = client.post(f'/courses/{cid}/lessons/{l1}/complete', json={'watch_seconds': 999999})
+    assert r.status_code == 200, r.data
     with flask_app.app_context():
         lp = LessonProgress.query.filter_by(lesson_id=l1).first()
-        assert lp.actual_watch_seconds <= 600  # 動画長で頭打ち
+        assert lp.actual_watch_seconds == 600  # 999999ではなく動画長で頭打ち
 
 
 # ---------- コース設定の新フィールド保存 ----------

@@ -75,3 +75,25 @@ def seed_course():
 def login(client, username='emp', password='pass1234'):
     return client.post('/login', data={'username': username, 'password': password},
                        follow_redirects=True)
+
+
+def set_watched(course_id, lesson_id, seconds=None):
+    """スキップ防止（実視聴が動画長の9割以上）を満たすため、
+    指定レッスンの実測視聴秒数(actual_watch_seconds)を直に積む。
+    seconds=None のときは動画長ぶん（=満視聴）をセットする。
+    heartbeatはサーバ実経過時間で加算するため、テストでは実時間を進められない。
+    その代替として満視聴済みの状態を直接用意する。
+    """
+    from app import LessonProgress
+    with flask_app.app_context():
+        enr = Enrollment.query.filter_by(course_id=course_id).first()
+        lesson = db.session.get(Lesson, lesson_id)
+        if seconds is None:
+            seconds = lesson.duration_seconds or 0
+        lp = LessonProgress.query.filter_by(
+            enrollment_id=enr.id, lesson_id=lesson_id).first()
+        if not lp:
+            lp = LessonProgress(enrollment_id=enr.id, lesson_id=lesson_id)
+            db.session.add(lp)
+        lp.actual_watch_seconds = seconds
+        db.session.commit()
