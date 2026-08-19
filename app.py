@@ -1380,6 +1380,25 @@ def export_training_record_pdf(course_id):
                      as_attachment=True, mimetype='application/pdf')
 
 
+@app.route('/admin/courses/<int:course_id>/certificate/<int:user_id>')
+@login_required
+def admin_download_certificate(course_id, user_id):
+    """管理者が受講者の発行済み修了証を取得する（受講者側と同一のPDF）。"""
+    if current_user.role != 'skillgrowth':
+        return redirect(url_for('dashboard'))
+    enrollment = Enrollment.query.filter_by(
+        user_id=user_id, course_id=course_id).first_or_404()
+    if enrollment.status != 'completed':
+        flash('この受講者はまだコースを修了していません', 'warning')
+        return redirect(url_for('course_report', course_id=course_id))
+    course = Course.query.get_or_404(course_id)
+    user = User.query.get_or_404(user_id)
+    pdf = generate_certificate_pdf(user, course, enrollment)
+    return send_file(pdf,
+                     download_name=f'修了証_{user.full_name or user.username}_{course.title}.pdf',
+                     as_attachment=True, mimetype='application/pdf')
+
+
 @app.route('/admin/logs')
 @login_required
 def admin_logs():

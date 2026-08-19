@@ -46,7 +46,7 @@
     <table class="table table-hover mb-0">
       <thead class="table-light">
         <tr>
-          <th>氏名</th><th>部署</th><th>受講開始</th><th>修了日</th><th>学習時間</th><th>状況</th>
+          <th>氏名</th><th>部署</th><th>受講開始</th><th>修了日</th><th>学習時間</th><th>状況</th><th>修了証</th>
         </tr>
       </thead>
       <tbody>
@@ -64,6 +64,16 @@
             <span class="badge badge-in-progress">受講中</span>
             {% else %}
             <span class="badge badge-enrolled">未開始</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if enrollment.status == 'completed' %}
+            <a href="{{ url_for('admin_download_certificate', course_id=course.id, user_id=user.id) }}"
+               class="btn btn-outline-primary btn-sm">
+              <i class="bi bi-award me-1"></i>DL
+            </a>
+            {% else %}
+            <span class="text-muted">-</span>
             {% endif %}
           </td>
         </tr>
