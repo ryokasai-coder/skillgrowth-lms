@@ -24,6 +24,11 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
 app = Flask(__name__)
+# nginx 等のリバースプロキシ配下では LMS_TRUST_PROXY=1 を設定し、X-Forwarded-For から
+# 実クライアントIPを取得する（未設定だと受講ログ/ログイン証跡のIPが全て 127.0.0.1 になる）。
+if os.environ.get('LMS_TRUST_PROXY') == '1':
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 # SECRET_KEY は環境変数 LMS_SECRET_KEY から読み込む。未設定時は起動ごとにランダム生成
 # （＝再起動で全セッション無効化）し、本番では必ず環境変数を設定するよう警告する。
 _secret = os.environ.get('LMS_SECRET_KEY')
