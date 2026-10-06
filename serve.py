@@ -13,9 +13,21 @@ import os
 from waitress import serve
 from app import app, create_initial_data
 
+
+def serve_kwargs():
+    kwargs = {
+        'host': os.environ.get('LMS_HOST', '0.0.0.0'),
+        'port': int(os.environ.get('LMS_PORT', '8080')),
+    }
+    # waitress は既定で X-Forwarded-* を捨てる（clear_untrusted_proxy_headers=True）。
+    # nginx 配下では残して app 側の ProxyFix に実クライアントIPを渡す。
+    if os.environ.get('LMS_TRUST_PROXY') == '1':
+        kwargs['clear_untrusted_proxy_headers'] = False
+    return kwargs
+
+
 if __name__ == '__main__':
     create_initial_data()
-    host = os.environ.get('LMS_HOST', '0.0.0.0')
-    port = int(os.environ.get('LMS_PORT', '8080'))
-    print(f'本番サーバを起動します: http://{host}:{port}')
-    serve(app, host=host, port=port)
+    kwargs = serve_kwargs()
+    print(f"本番サーバを起動します: http://{kwargs['host']}:{kwargs['port']}")
+    serve(app, **kwargs)
