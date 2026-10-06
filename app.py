@@ -51,6 +51,15 @@ def fromjson_filter(s):
         return json.loads(s) if s else {}
     except Exception:
         return {}
+# 移転モード: LMS_MOVED_TO=https://新URL を設定すると、全リクエストを新URLの同じパスへ転送する。
+# 旧サーバー(PythonAnywhere)で受講記録が二重化しないよう、切替後に旧側で有効化する。
+_MOVED_TO = os.environ.get('LMS_MOVED_TO', '').rstrip('/')
+if _MOVED_TO:
+    @app.before_request
+    def _redirect_to_new_site():
+        path = request.full_path if request.query_string else request.path
+        return redirect(_MOVED_TO + path, code=302)
+
 # DB接続先は環境変数 LMS_DATABASE_URI で上書き可（テスト隔離・PostgreSQL移行に対応）。既定はSQLite。
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('LMS_DATABASE_URI', 'sqlite:///lms.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
