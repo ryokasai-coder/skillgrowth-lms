@@ -1196,7 +1196,7 @@ def lesson_heartbeat(course_id, lesson_id):
 def complete_lesson(course_id, lesson_id):
     """動画視聴完了 or 手動完了。実測視聴秒数を記録"""
     data = request.get_json(silent=True) or {}
-    final_seconds = int(data.get('watch_seconds', 0))
+    # data['watch_seconds'] はクライアント申告値のため使用しない（実測のみ記録）
 
     enrollment = Enrollment.query.filter_by(
         user_id=current_user.id, course_id=course_id).first_or_404()
@@ -1230,14 +1230,8 @@ def complete_lesson(course_id, lesson_id):
 
         progress.is_completed = True
         progress.completed_at = datetime.utcnow()
-        # ハートビートで積算した値より完了時点の秒数の方が大きければ更新。
-        # 改ざん防止: クライアント申告値は動画長を上限にして水増しを防ぐ。
-        cap = (lesson.duration_seconds or 0) if lesson else 0
-        capped_final = min(final_seconds, cap) if cap > 0 else final_seconds
-        if capped_final > (progress.actual_watch_seconds or 0):
-            diff = capped_final - (progress.actual_watch_seconds or 0)
-            progress.actual_watch_seconds = capped_final
-            enrollment.total_study_seconds = (enrollment.total_study_seconds or 0) + diff
+        # 監査対応: 視聴秒数はサーバ実測（heartbeat積算）のみを記録する。
+        # クライアント申告の watch_seconds（final_seconds）は受け取っても無視する（上乗せ・上書きしない）。
 
         log = StudyLog(
             user_id=current_user.id,
