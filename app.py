@@ -1034,7 +1034,10 @@ def ca_reports():
                    .join(Course, Enrollment.course_id == Course.id)
                    .filter(Enrollment.user_id.in_(employee_ids))
                    .order_by(User.full_name).all()) if employee_ids else []
-    return render_template('ca_reports.html', enrollments=enrollments, employees=employees)
+    companies = (Company.query.order_by(Company.name).all()
+                 if current_user.role == 'skillgrowth' else [])
+    return render_template('ca_reports.html', enrollments=enrollments, employees=employees,
+                           companies=companies)
 
 
 # ===== 受講（従業員） =====
@@ -1427,7 +1430,8 @@ def course_report(course_id):
     enrollments = (db.session.query(Enrollment, User)
                    .join(User, Enrollment.user_id == User.id)
                    .filter(Enrollment.course_id == course_id).all())
-    return render_template('course_report.html', course=course, enrollments=enrollments)
+    return render_template('course_report.html', course=course, enrollments=enrollments,
+                           companies=Company.query.order_by(Company.name).all())
 
 
 @app.route('/admin/courses/<int:course_id>/export/csv')
@@ -1436,9 +1440,13 @@ def export_csv(course_id):
     if current_user.role != 'skillgrowth':
         return redirect(url_for('dashboard'))
     course = Course.query.get_or_404(course_id)
-    enrollments = (db.session.query(Enrollment, User)
-                   .join(User, Enrollment.user_id == User.id)
-                   .filter(Enrollment.course_id == course_id).all())
+    company_id = request.args.get('company_id', type=int)
+    eq = (db.session.query(Enrollment, User)
+          .join(User, Enrollment.user_id == User.id)
+          .filter(Enrollment.course_id == course_id))
+    if company_id:
+        eq = eq.filter(User.company_id == company_id)
+    enrollments = eq.all()
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['社員番号', '氏名', '部署', '雇用形態', '受講開始日(JST)', '受講完了日(JST)',
@@ -1471,9 +1479,13 @@ def export_training_record_pdf(course_id):
     if current_user.role != 'skillgrowth':
         return redirect(url_for('dashboard'))
     course = Course.query.get_or_404(course_id)
-    enrollments = (db.session.query(Enrollment, User)
-                   .join(User, Enrollment.user_id == User.id)
-                   .filter(Enrollment.course_id == course_id).all())
+    company_id = request.args.get('company_id', type=int)
+    eq = (db.session.query(Enrollment, User)
+          .join(User, Enrollment.user_id == User.id)
+          .filter(Enrollment.course_id == course_id))
+    if company_id:
+        eq = eq.filter(User.company_id == company_id)
+    enrollments = eq.all()
     pdf = generate_training_record_pdf(course, enrollments)
     return send_file(pdf, download_name=f'訓練実施記録_{course.title}.pdf',
                      as_attachment=True, mimetype='application/pdf')
@@ -1506,6 +1518,7 @@ def admin_logs():
         return redirect(url_for('dashboard'))
     course_id = request.args.get('course_id', type=int)
     user_id = request.args.get('user_id', type=int)
+    company_id = request.args.get('company_id', type=int)
 
     query = (db.session.query(StudyLog, User, Course, Lesson)
              .join(User, StudyLog.user_id == User.id)
@@ -1515,11 +1528,18 @@ def admin_logs():
         query = query.filter(StudyLog.course_id == course_id)
     if user_id:
         query = query.filter(StudyLog.user_id == user_id)
+    if company_id:
+        query = query.filter(User.company_id == company_id)
     logs = query.order_by(StudyLog.login_at.desc()).limit(500).all()
 
     courses = Course.query.order_by(Course.title).all()
-    users = User.query.filter_by(role='employee').order_by(User.full_name).all()
+    uq = User.query.filter_by(role='employee')
+    if company_id:
+        uq = uq.filter_by(company_id=company_id)
+    users = uq.order_by(User.full_name).all()
+    companies = Company.query.order_by(Company.name).all()
     return render_template('admin_logs.html', logs=logs, courses=courses, users=users,
+                           companies=companies, selected_company=company_id,
                            selected_course=course_id, selected_user=user_id)
 
 
@@ -1530,6 +1550,7 @@ def export_full_logs_csv():
     if current_user.role != 'skillgrowth':
         return redirect(url_for('dashboard'))
     course_id = request.args.get('course_id', type=int)
+    company_id = request.args.get('company_id', type=int)
 
     query = (db.session.query(StudyLog, User, Course, Lesson)
              .join(User, StudyLog.user_id == User.id)
@@ -1537,6 +1558,8 @@ def export_full_logs_csv():
              .outerjoin(Lesson, StudyLog.lesson_id == Lesson.id))
     if course_id:
         query = query.filter(StudyLog.course_id == course_id)
+    if company_id:
+        query = query.filter(User.company_id == company_id)
     logs = query.order_by(StudyLog.login_at.asc()).all()
 
     output = io.StringIO()
@@ -1577,11 +1600,14 @@ def export_login_sessions_csv():
     if current_user.role != 'skillgrowth':
         return redirect(url_for('dashboard'))
     user_id = request.args.get('user_id', type=int)
+    company_id = request.args.get('company_id', type=int)
 
     query = (db.session.query(LoginSession, User)
              .join(User, LoginSession.user_id == User.id))
     if user_id:
         query = query.filter(LoginSession.user_id == user_id)
+    if company_id:
+        query = query.filter(User.company_id == company_id)
     sessions = query.order_by(LoginSession.login_at.asc()).all()
 
     output = io.StringIO()
@@ -1613,6 +1639,367 @@ def export_login_sessions_csv():
         download_name=filename,
         as_attachment=True, mimetype='text/csv; charset=utf-8-sig'
     )
+
+
+# ===== 監査対応帳票（助成金：LMS情報の写し / 受講時間10時間以上の者の一覧表） =====
+
+TEN_HOURS_SECONDS = 10 * 3600
+TEN_HOURS_CERT_TEXT = ('上記の者は、当機関が提供する定額制訓練において、'
+                       '修了した講座の標準学習時間の合計が10時間以上であることを証明します。')
+
+
+def course_standard_seconds(course):
+    """講座(Course)の標準学習時間（秒）= レッスン動画長の合計（修了証の標準学習時間と同じ算出）。"""
+    return sum(l.duration_seconds or (l.duration_minutes or 0) * 60 for l in course.lessons)
+
+
+def fmt_hms(seconds):
+    """秒を H:MM:SS に整形する（時は桁数可変）。"""
+    seconds = int(seconds or 0)
+    return f'{seconds // 3600}:{seconds % 3600 // 60:02d}:{seconds % 60:02d}'
+
+
+def _parse_jst_date_arg(name):
+    """クエリの YYYY-MM-DD（JST日付）をdateにする。未指定はNone、不正は400。"""
+    raw = (request.args.get(name) or '').strip()
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, '%Y-%m-%d').date()
+    except ValueError:
+        abort(400)
+
+
+def _jst_midnight_utc(d):
+    """JSTの日付 d の 00:00(JST) を DB と同じ UTC(naive) にする。"""
+    return datetime(d.year, d.month, d.day, tzinfo=JST).astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _audit_period():
+    """(開始UTC以上, 終了UTC未満)。終了日はその日の終わり(JST)まで含める。"""
+    d_from = _parse_jst_date_arg('from')
+    d_to = _parse_jst_date_arg('to')
+    start = _jst_midnight_utc(d_from) if d_from else None
+    end = _jst_midnight_utc(d_to + timedelta(days=1)) if d_to else None
+    return start, end
+
+
+def _audit_scope(require_company=False):
+    """出力対象の事業所を決める。会社管理者は自社に固定（他社指定は403）。
+    skillgrowth は company_id 任意（require_company=True なら必須）。戻り値は (company_id, Company or None)。"""
+    cid = request.args.get('company_id', type=int)
+    if current_user.role == 'company_admin':
+        if not current_user.company_id or (cid and cid != current_user.company_id):
+            abort(403)
+        cid = current_user.company_id
+    elif require_company and not cid:
+        abort(400)
+    company = db.session.get(Company, cid) if cid else None
+    if cid and not company:
+        abort(404)
+    return cid, company
+
+
+def _audit_target_users(company_id, user_id):
+    q = User.query.filter_by(role='employee')
+    if company_id:
+        q = q.filter_by(company_id=company_id)
+    if user_id:
+        q = q.filter_by(id=user_id)
+    return q.order_by(User.company_id, User.employee_id, User.id).all()
+
+
+def _check_audit_user_access(user_id):
+    """会社管理者が他社の受講者を user_id で指定した場合は403。"""
+    if user_id and current_user.role == 'company_admin':
+        u = db.session.get(User, user_id)
+        if u is None or u.company_id != current_user.company_id:
+            abort(403)
+
+
+def build_lms_copy_rows(users, start=None, end=None):
+    """LMS情報の写し（受講者×講座）の行を作る。
+    受講終了日時=最終視聴(StudyLog)/レッスン完了/修了のうち最新。期間指定時は受講終了日時が期間内の行のみ。"""
+    user_ids = [u.id for u in users]
+    if not user_ids:
+        return []
+    user_order = {u.id: i for i, u in enumerate(users)}
+    logs = {}
+    for uid, cid, first, last in (db.session.query(
+            StudyLog.user_id, StudyLog.course_id,
+            db.func.min(StudyLog.login_at),
+            db.func.max(db.func.coalesce(StudyLog.logout_at, StudyLog.login_at)))
+            .filter(StudyLog.user_id.in_(user_ids))
+            .group_by(StudyLog.user_id, StudyLog.course_id).all()):
+        logs[(uid, cid)] = (first, last)
+    enrs = (db.session.query(Enrollment, Course)
+            .join(Course, Enrollment.course_id == Course.id)
+            .filter(Enrollment.user_id.in_(user_ids)).all())
+    enrs.sort(key=lambda ec: (user_order[ec[0].user_id], ec[1].category or '',
+                              ec[1].sort_order or 0, ec[1].id))
+    users_by_id = {u.id: u for u in users}
+    rows = []
+    for enr, course in enrs:
+        user = users_by_id[enr.user_id]
+        lesson_ids = {l.id for l in course.lessons}
+        done_lps = [lp for lp in enr.lesson_progress
+                    if lp.is_completed and lp.lesson_id in lesson_ids]
+        total_n = len(lesson_ids)
+        log_first, log_last = logs.get((enr.user_id, course.id), (None, None))
+        starts = [d for d in (enr.started_at, log_first) if d]
+        ends = [d for d in [enr.completed_at, log_last] + [lp.completed_at for lp in done_lps] if d]
+        started_at = min(starts) if starts else None
+        ended_at = max(ends) if ends else None
+        if (start or end) and (ended_at is None
+                               or (start and ended_at < start) or (end and ended_at >= end)):
+            continue
+        completed_at = course_completed_at(enr) if enr.status == 'completed' else None
+        rows.append({
+            'company': user.company.name if user.company else '',
+            'employee_id': user.employee_id or '',
+            'name': user.full_name or user.username,
+            'curriculum': course.category or '',
+            'course': course.title,
+            'standard_sec': course_standard_seconds(course),
+            'started_at': started_at,
+            'ended_at': ended_at,
+            'study_sec': enr.total_study_seconds or 0,
+            'progress': (len(done_lps) / total_n * 100) if total_n else 0.0,
+            'completed_at': completed_at,
+        })
+    return rows
+
+
+def build_ten_hours_list(users, start=None, end=None):
+    """10時間以上の者の一覧。修了済み講座を修了日時順に標準学習時間で累積し、
+    累積が初めて10時間(36000秒)以上になった講座の修了日を到達日とする。
+    end 指定時はその時点までの修了のみ集計、start 指定時は到達日が期間内の者のみ載せる。"""
+    user_ids = [u.id for u in users]
+    if not user_ids:
+        return []
+    by_user = {}
+    for enr, course in (db.session.query(Enrollment, Course)
+                        .join(Course, Enrollment.course_id == Course.id)
+                        .filter(Enrollment.user_id.in_(user_ids),
+                                Enrollment.status == 'completed').all()):
+        done_at = course_completed_at(enr)
+        if done_at is None or (end and done_at >= end):
+            continue
+        by_user.setdefault(enr.user_id, []).append(
+            (done_at, course.id, course_standard_seconds(course), course))
+    result = []
+    for u in users:
+        items = sorted(by_user.get(u.id, []), key=lambda t: (t[0], t[1]))
+        cum, reached = 0, None
+        for done_at, _cid, sec, _c in items:
+            cum += sec
+            if reached is None and cum >= TEN_HOURS_SECONDS:
+                reached = done_at
+        if reached is None or (start and reached < start):
+            continue
+        curricula = []
+        for _d, _i, _s, c in items:
+            name = c.category or c.title
+            if name not in curricula:
+                curricula.append(name)
+        result.append({
+            'company': u.company.name if u.company else '',
+            'employee_id': u.employee_id or '',
+            'name': u.full_name or u.username,
+            'reached_at': reached,
+            'total_sec': cum,
+            'curricula': curricula,
+        })
+    return result
+
+
+def _fmt_progress(p):
+    return f'{p:.1f}%'
+
+
+def _csv_response(header, rows, filename):
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(header)
+    writer.writerows(rows)
+    return send_file(io.BytesIO(output.getvalue().encode('utf-8-sig')),
+                     download_name=filename, as_attachment=True,
+                     mimetype='text/csv; charset=utf-8-sig')
+
+
+def _audit_args(require_company=False):
+    """共通の引数解釈。戻り値 (company_id, company, user_id, start, end)。"""
+    cid, company = _audit_scope(require_company)
+    user_id = request.args.get('user_id', type=int)
+    _check_audit_user_access(user_id)
+    start, end = _audit_period()
+    return cid, company, user_id, start, end
+
+
+def _period_label():
+    d_from = (request.args.get('from') or '').strip()
+    d_to = (request.args.get('to') or '').strip()
+    return f'{d_from or "指定なし"} ～ {d_to or "指定なし"}' if (d_from or d_to) else ''
+
+
+@app.route('/audit/lms-copy/csv')
+@login_required
+@company_admin_required
+def export_lms_copy_csv():
+    """LMS情報の写し（受講者×講座）CSV。skillgrowth=全社/会社指定、company_admin=自社のみ。"""
+    cid, company, user_id, start, end = _audit_args()
+    rows = build_lms_copy_rows(_audit_target_users(cid, user_id), start, end)
+    data = [[r['company'], r['employee_id'], r['name'], r['curriculum'], r['course'],
+             fmt_hms(r['standard_sec']),
+             format_jst(r['started_at'], empty=''), format_jst(r['ended_at'], empty=''),
+             fmt_hms(r['study_sec']), _fmt_progress(r['progress']),
+             format_jst(r['completed_at'], '%Y/%m/%d', '')] for r in rows]
+    label = company.name if company else '全事業所'
+    return _csv_response(
+        ['事業所名', '社員番号', '氏名', '研修名', '講座名', '標準学習時間',
+         '受講開始日時(JST)', '受講終了日時(JST)', '受講時間数', '進捗率', '修了日(JST)'],
+        data, f'LMS情報の写し_{label}_{jst_now().strftime("%Y%m%d")}.csv')
+
+
+@app.route('/audit/lms-copy/pdf')
+@login_required
+@company_admin_required
+def export_lms_copy_pdf():
+    cid, company, user_id, start, end = _audit_args()
+    rows = build_lms_copy_rows(_audit_target_users(cid, user_id), start, end)
+    label = company.name if company else '全事業所'
+    pdf = generate_lms_copy_pdf(label, rows, _period_label())
+    return send_file(pdf, download_name=f'LMS情報の写し_{label}_{jst_now().strftime("%Y%m%d")}.pdf',
+                     as_attachment=True, mimetype='application/pdf')
+
+
+@app.route('/audit/ten-hours/csv')
+@login_required
+@company_admin_required
+def export_ten_hours_csv():
+    """受講時間10時間以上の者の一覧表CSV（事業所単位）。skillgrowth は company_id 必須。"""
+    cid, company, _uid, start, end = _audit_args(require_company=True)
+    people = build_ten_hours_list(_audit_target_users(cid, None), start, end)
+    data = [[p['company'], p['employee_id'], p['name'],
+             format_jst(p['reached_at'], '%Y/%m/%d', ''), fmt_hms(p['total_sec']),
+             ' / '.join(p['curricula'])] for p in people]
+    return _csv_response(
+        ['事業所名', '社員番号', '氏名', '10時間以上を修了した日(JST)',
+         '修了講座の標準学習時間合計', '研修名'],
+        data, f'受講時間10時間以上の者の一覧表_{company.name}_{jst_now().strftime("%Y%m%d")}.csv')
+
+
+@app.route('/audit/ten-hours/pdf')
+@login_required
+@company_admin_required
+def export_ten_hours_pdf():
+    cid, company, _uid, start, end = _audit_args(require_company=True)
+    people = build_ten_hours_list(_audit_target_users(cid, None), start, end)
+    pdf = generate_ten_hours_pdf(company.name, people)
+    return send_file(pdf, download_name=f'受講時間10時間以上の者の一覧表_{company.name}_{jst_now().strftime("%Y%m%d")}.pdf',
+                     as_attachment=True, mimetype='application/pdf')
+
+
+def _jp_font_name():
+    _ensure_jp_fonts()
+    return 'JpGothic' if 'JpGothic' in pdfmetrics.getRegisteredFontNames() else 'Helvetica'
+
+
+def _esc(v):
+    return str(v).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+
+def generate_lms_copy_pdf(company_name, rows, period_label=''):
+    """LMS情報の写し PDF（A4横）。ヘッダに事業所名・出力日時(JST)・発行機関名。"""
+    from reportlab.lib.pagesizes import landscape
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
+                            rightMargin=10*mm, leftMargin=10*mm,
+                            topMargin=10*mm, bottomMargin=10*mm)
+    G = _jp_font_name()
+    P = lambda name, **kw: ParagraphStyle(name, fontName=G, **kw)
+    cell = P('cell', fontSize=6.5, leading=8)
+    head = P('head', fontSize=6.5, leading=8, textColor=colors.whitesmoke)
+    story = [
+        Paragraph('LMS情報の写し（受講記録）', P('h1', fontSize=14, leading=18, spaceAfter=3)),
+        Paragraph(f'事業所名: {_esc(company_name)}　出力日時(JST): {jst_now().strftime("%Y/%m/%d %H:%M:%S")}　'
+                  f'発行機関: {ISSUER_NAME}' + (f'　対象期間: {period_label}' if period_label else ''),
+                  P('meta', fontSize=8, leading=11)),
+        Spacer(1, 3*mm),
+    ]
+    header = ['事業所名', '社員番号', '氏名', '研修名', '講座名', '標準学習時間',
+              '受講開始日時(JST)', '受講終了日時(JST)', '受講時間数', '進捗率', '修了日(JST)']
+    data = [[Paragraph(h, head) for h in header]]
+    for r in rows:
+        vals = [r['company'], r['employee_id'], r['name'], r['curriculum'], r['course'],
+                fmt_hms(r['standard_sec']),
+                format_jst(r['started_at'], empty=''), format_jst(r['ended_at'], empty=''),
+                fmt_hms(r['study_sec']), _fmt_progress(r['progress']),
+                format_jst(r['completed_at'], '%Y/%m/%d', '')]
+        data.append([Paragraph(_esc(v), cell) for v in vals])
+    if len(data) == 1:
+        data.append([Paragraph('該当する受講記録はありません', cell)] + [''] * 10)
+    widths = [24, 16, 24, 34, 50, 18, 28, 28, 18, 14, 22]
+    table = Table(data, colWidths=[w * mm for w in widths], repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e293b')),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID', (0, 0), (-1, -1), 0.4, colors.grey),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8fafc')]),
+    ]))
+    story.append(table)
+    doc.build(story)
+    buf.seek(0)
+    return buf
+
+
+def generate_ten_hours_pdf(company_name, people):
+    """受講時間10時間以上の者の一覧表 PDF（A4縦）。"""
+    from reportlab.platypus import KeepTogether
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            rightMargin=20*mm, leftMargin=20*mm,
+                            topMargin=20*mm, bottomMargin=20*mm)
+    G = _jp_font_name()
+    P = lambda name, **kw: ParagraphStyle(name, fontName=G, **kw)
+    cell = P('cell', fontSize=10, leading=13, alignment=1)
+    cell_l = P('cell_l', fontSize=10, leading=13)
+    head = P('head', fontSize=10, leading=13, alignment=1, textColor=colors.whitesmoke)
+    curricula = []
+    for p in people:
+        for c in p['curricula']:
+            if c not in curricula:
+                curricula.append(c)
+    story = [
+        Paragraph('受講時間10時間以上の者の一覧表', P('h1', fontSize=18, leading=24, alignment=1, spaceAfter=10)),
+        Paragraph(f'事業所名: {_esc(company_name)}', P('m1', fontSize=11, leading=16)),
+        Paragraph('コース名: ' + (_esc('、'.join(curricula)) if curricula else '-'), P('m2', fontSize=11, leading=16)),
+        Spacer(1, 5*mm),
+    ]
+    data = [[Paragraph(h, head) for h in ['No', '氏名', '10時間以上を修了した日', '修了講座の標準学習時間合計']]]
+    for i, p in enumerate(people, 1):
+        data.append([Paragraph(str(i), cell), Paragraph(_esc(p['name']), cell_l),
+                     Paragraph(format_jst(p['reached_at'], CERT_DATE_FMT), cell),
+                     Paragraph(fmt_hms(p['total_sec']), cell)])
+    if not people:
+        data.append([Paragraph('-', cell), Paragraph('該当者なし', cell_l), '', ''])
+    table = Table(data, colWidths=[12*mm, 50*mm, 50*mm, 58*mm], repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e293b')),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+    ]))
+    story.append(table)
+    story.append(Spacer(1, 10*mm))
+    story.append(KeepTogether([
+        Paragraph(TEN_HOURS_CERT_TEXT, P('cert', fontSize=11, leading=17, spaceAfter=10)),
+        Paragraph(f'発行日: {jst_now().strftime(CERT_DATE_FMT)}', P('d', fontSize=11, leading=16)),
+        Paragraph(f'発行機関: {ISSUER_NAME}', P('i', fontSize=11, leading=16)),
+    ]))
+    doc.build(story)
+    buf.seek(0)
+    return buf
 
 
 @app.route('/admin/courses/<int:course_id>/quiz-history')
@@ -1704,6 +2091,7 @@ def _ensure_jp_fonts():
 
 
 CERT_DATE_FMT = '%Y年%m月%d日'
+ISSUER_NAME = 'Skill Growth 合同会社'  # 発行機関名（修了証・監査帳票共通）
 
 
 def certificate_date_str(completed_at):
@@ -1832,7 +2220,7 @@ def _build_certificate_canvas(title_label, curriculum, course_title, lesson_titl
     c.setFont(MINCHO, 11)
     c.setFillColor(BLACK)
     c.drawCentredString(info_x, 48*mm, '発行日　' + completed_str)
-    c.drawCentredString(info_x, 38*mm, 'Skill Growth 合同会社')
+    c.drawCentredString(info_x, 38*mm, ISSUER_NAME)
     c.drawCentredString(info_x, 28*mm, '代表社員　紙谷　正平')
 
     c.save()

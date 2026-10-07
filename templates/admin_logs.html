@@ -10,10 +10,22 @@
   </div>
 </div>
 
+{% set audit_companies = companies %}{% set audit_users = users %}
+{% include '_audit_forms.html' %}
+
 <div class="card mb-3">
   <div class="card-body">
     <form method="GET" class="row g-2 align-items-end">
-      <div class="col-md-4">
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">事業所で絞り込み</label>
+        <select name="company_id" class="form-select form-select-sm">
+          <option value="">-- 全事業所 --</option>
+          {% for co in companies %}
+          <option value="{{ co.id }}" {% if selected_company == co.id %}selected{% endif %}>{{ co.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
         <label class="form-label small fw-semibold">コースで絞り込み</label>
         <select name="course_id" class="form-select form-select-sm">
           <option value="">-- 全コース --</option>
@@ -24,7 +36,7 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
         <label class="form-label small fw-semibold">受講者で絞り込み</label>
         <select name="user_id" class="form-select form-select-sm">
           <option value="">-- 全受講者 --</option>
@@ -35,15 +47,15 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-md-4 d-flex gap-2">
+      <div class="col-md-3 d-flex gap-2">
         <button type="submit" class="btn btn-primary btn-sm">
           <i class="bi bi-funnel me-1"></i>絞り込み
         </button>
-        <a href="{{ url_for('export_full_logs_csv', course_id=selected_course or '') }}"
+        <a href="{{ url_for('export_full_logs_csv', course_id=selected_course or '', company_id=selected_company or '') }}"
            class="btn btn-success btn-sm">
           <i class="bi bi-file-earmark-spreadsheet me-1"></i>受講ログCSV
         </a>
-        <a href="{{ url_for('export_login_sessions_csv', user_id=selected_user or '') }}"
+        <a href="{{ url_for('export_login_sessions_csv', user_id=selected_user or '', company_id=selected_company or '') }}"
            class="btn btn-outline-success btn-sm">
           <i class="bi bi-box-arrow-in-right me-1"></i>ログイン証跡CSV
         </a>

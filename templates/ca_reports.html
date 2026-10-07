@@ -3,6 +3,9 @@
 {% block page_title %}受講レポート{% endblock %}
 
 {% block content %}
+{% set audit_companies = companies %}{% set audit_users = employees %}
+{% include '_audit_forms.html' %}
+
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h5 class="mb-0">受講状況一覧（{{ enrollments | length }}件）</h5>
 </div>
