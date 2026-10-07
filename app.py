@@ -1773,7 +1773,7 @@ def build_lms_copy_rows(users, start=None, end=None):
 def build_ten_hours_list(users, start=None, end=None):
     """10時間以上の者の一覧。修了済み講座を修了日時順に標準学習時間で累積し、
     累積が初めて10時間(36000秒)以上になった講座の修了日を到達日とする。
-    end 指定時はその時点までの修了のみ集計、start 指定時は到達日が期間内の者のみ載せる。"""
+    start/end（訓練の契約期間）指定時は、期間内の修了だけで累積する（期間外の修了は数えない）。"""
     user_ids = [u.id for u in users]
     if not user_ids:
         return []
@@ -1783,7 +1783,7 @@ def build_ten_hours_list(users, start=None, end=None):
                         .filter(Enrollment.user_id.in_(user_ids),
                                 Enrollment.status == 'completed').all()):
         done_at = course_completed_at(enr)
-        if done_at is None or (end and done_at >= end):
+        if done_at is None or (end and done_at >= end) or (start and done_at < start):
             continue
         by_user.setdefault(enr.user_id, []).append(
             (done_at, course.id, course_standard_seconds(course), course))
@@ -1795,7 +1795,7 @@ def build_ten_hours_list(users, start=None, end=None):
             cum += sec
             if reached is None and cum >= TEN_HOURS_SECONDS:
                 reached = done_at
-        if reached is None or (start and reached < start):
+        if reached is None:
             continue
         curricula = []
         for _d, _i, _s, c in items:

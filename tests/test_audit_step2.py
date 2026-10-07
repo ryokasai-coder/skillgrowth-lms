@@ -145,8 +145,9 @@ def test_ten_hours_period_filter(client):
     w = _world()
     login(client, 'sg')
     base = f'/audit/ten-hours/csv?company_id={w["a"]}'
-    assert len(_bom_rows(client.get(base + '&from=2026-10-01&to=2026-10-31'))) == 2
-    assert len(_bom_rows(client.get(base + '&from=2026-10-09'))) == 1
+    assert len(_bom_rows(client.get(base + '&from=2026-09-01&to=2026-10-31'))) == 2
+    # 契約期間外（10/01より前）の修了は累積しない → 10月の修了だけでは誰も10時間に届かない
+    assert len(_bom_rows(client.get(base + '&from=2026-10-01'))) == 1   # ヘッダーのみ
     # to=10/07 だと 10/08(JST) の修了は対象外 → 到達していない
     assert len(_bom_rows(client.get(base + '&to=2026-10-07'))) == 1
 
