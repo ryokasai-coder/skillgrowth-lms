@@ -1384,6 +1384,7 @@ def curriculum_certificate(course_id):
     """カリキュラム（同カテゴリ全コース）完了時の修了証"""
     course = Course.query.get_or_404(course_id)
     curr_courses = Course.query.filter_by(category=course.category).all()
+    completed_dates = []
     for cc in curr_courses:
         enr = Enrollment.query.filter_by(user_id=current_user.id, course_id=cc.id).first()
         if not enr:
@@ -1393,7 +1394,11 @@ def curriculum_certificate(course_id):
         if any(l.id not in done for l in cc.lessons):
             flash('カリキュラムの全コースを完了していません', 'warning')
             return redirect(url_for('study_course', course_id=course_id))
-    pdf = generate_curriculum_certificate_pdf(current_user, course.category, curr_courses)
+        completed_dates.append(course_completed_at(enr))
+    # カリキュラムの修了日時 = 全コースのうち最後に修了した日時（欠けがあれば従来どおり現在日）
+    curr_completed_at = max(completed_dates) if completed_dates and all(completed_dates) else None
+    pdf = generate_curriculum_certificate_pdf(current_user, course.category, curr_courses,
+                                              completed_at=curr_completed_at)
     fname = f'修了証_{current_user.full_name or current_user.username}_{course.category}.pdf'
     return send_file(pdf, download_name=fname, as_attachment=True, mimetype='application/pdf')
 
@@ -1698,10 +1703,28 @@ def _ensure_jp_fonts():
     _JP_FONTS_REGISTERED = True
 
 
+CERT_DATE_FMT = '%Y年%m月%d日'
+
+
+def certificate_date_str(completed_at):
+    # 修了証の日付は「修了日時(JST)」に固定する（ダウンロードのたびに変わらないように）。
+    # 修了日時が無い場合のみ従来どおり現在日(JST)にフォールバックする。
+    return format_jst(completed_at, CERT_DATE_FMT) if completed_at else jst_now().strftime(CERT_DATE_FMT)
+
+
+def course_completed_at(enrollment):
+    # コースの修了日時: 修了日時があればそれ、無ければ最後のレッスン完了日時（どちらも無ければNone）。
+    if enrollment.completed_at:
+        return enrollment.completed_at
+    done = [lp.completed_at for lp in enrollment.lesson_progress
+            if lp.is_completed and lp.completed_at]
+    return max(done) if done else None
+
+
 def generate_lesson_certificate_pdf(user, course, lesson, progress):
     """動画1本完了修了証"""
     total_sec = lesson.duration_seconds or (lesson.duration_minutes or 0) * 60
-    completed_str = (progress.completed_at or datetime.utcnow()).strftime('%Y年%m月%d日')
+    completed_str = certificate_date_str(progress.completed_at)
     return _build_certificate_canvas(
         title_label='修了証',
         curriculum=course.category or course.title,
@@ -1820,7 +1843,7 @@ def _build_certificate_canvas(title_label, curriculum, course_title, lesson_titl
 def generate_course_certificate_pdf(user, course, enrollment):
     """コース全レッスン完了修了証"""
     total_sec = sum(l.duration_seconds or (l.duration_minutes or 0) * 60 for l in course.lessons)
-    completed_str = (enrollment.completed_at or datetime.utcnow()).strftime('%Y年%m月%d日')
+    completed_str = certificate_date_str(course_completed_at(enrollment))
     return _build_certificate_canvas(
         title_label='修了証',
         curriculum=course.category or course.title,
@@ -1832,7 +1855,7 @@ def generate_course_certificate_pdf(user, course, enrollment):
     )
 
 
-def generate_curriculum_certificate_pdf(user, curriculum_name, courses):
+def generate_curriculum_certificate_pdf(user, curriculum_name, courses, completed_at=None):
     """カリキュラム（全コース）完了修了証"""
     total_sec = sum(
         sum(l.duration_seconds or (l.duration_minutes or 0) * 60 for l in c.lessons)
@@ -1845,7 +1868,7 @@ def generate_curriculum_certificate_pdf(user, curriculum_name, courses):
         lesson_title=None,
         total_sec=total_sec,
         user_name=user.full_name or user.username,
-        completed_str=datetime.utcnow().strftime('%Y年%m月%d日'),
+        completed_str=certificate_date_str(completed_at),
     )
 
 
@@ -1882,7 +1905,7 @@ def generate_certificate_pdf(user, course, enrollment):
     story.append(Spacer(1, 10*mm))
     story.append(Paragraph("上記の者は、上記訓練を修了したことを証明します。",
                             T('cert', fontSize=12, alignment=1, spaceAfter=8)))
-    story.append(Paragraph(f"発行日: {datetime.now().strftime('%Y年%m月%d日')}",
+    story.append(Paragraph(f"発行日: {certificate_date_str(course_completed_at(enrollment))}",
                             T('date', fontSize=12, alignment=1)))
     doc.build(story)
     buf.seek(0)
