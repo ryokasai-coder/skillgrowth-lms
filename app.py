@@ -605,6 +605,42 @@ def add_lesson(course_id):
     return redirect(url_for('edit_course', course_id=course_id))
 
 
+# 受講記録（労働局提出の証憑）が1件でもあるものは削除させない。非公開化で運用する。
+DELETE_BLOCKED_MSG = '受講記録があるため削除できません（非公開化してください）'
+
+
+def _user_ids_with_records(user_ids):
+    # 指定ユーザーのうち受講記録（受講ログ/視聴進捗/テスト解答/ログイン証跡）を持つユーザーIDの集合を返す。
+    if not user_ids:
+        return set()
+    found = set()
+    for model in (StudyLog, QuizAttempt, LoginSession):
+        found |= {r[0] for r in db.session.query(model.user_id)
+                  .filter(model.user_id.in_(user_ids)).distinct()}
+    found |= {r[0] for r in db.session.query(Enrollment.user_id)
+              .join(LessonProgress, LessonProgress.enrollment_id == Enrollment.id)
+              .filter(Enrollment.user_id.in_(user_ids)).distinct()}
+    return found
+
+
+def lesson_has_records(lesson_id):
+    return bool(LessonProgress.query.filter_by(lesson_id=lesson_id).first()
+                or StudyLog.query.filter_by(lesson_id=lesson_id).first())
+
+
+def course_has_records(course_id):
+    return bool(StudyLog.query.filter_by(course_id=course_id).first()
+                or QuizAttempt.query.filter_by(course_id=course_id).first()
+                or db.session.query(LessonProgress.id)
+                .join(Enrollment, LessonProgress.enrollment_id == Enrollment.id)
+                .filter(Enrollment.course_id == course_id).first())
+
+
+def company_has_records(company_id):
+    ids = [u.id for u in User.query.filter_by(company_id=company_id).all()]
+    return bool(_user_ids_with_records(ids))
+
+
 @app.route('/admin/lessons/<int:lesson_id>/delete', methods=['POST'])
 @login_required
 def delete_lesson(lesson_id):
@@ -612,6 +648,9 @@ def delete_lesson(lesson_id):
         return redirect(url_for('dashboard'))
     lesson = Lesson.query.get_or_404(lesson_id)
     course_id = lesson.course_id
+    if lesson_has_records(lesson_id):
+        flash(DELETE_BLOCKED_MSG, 'danger')
+        return redirect(url_for('edit_course', course_id=course_id))
     StudyLog.query.filter_by(lesson_id=lesson_id).update({'lesson_id': None})
     db.session.delete(lesson)  # cascade: LessonProgress も削除
     db.session.commit()
@@ -626,6 +665,9 @@ def delete_course(course_id):
         return redirect(url_for('dashboard'))
     course = Course.query.get_or_404(course_id)
     title = course.title
+    if course_has_records(course_id):
+        flash(DELETE_BLOCKED_MSG, 'danger')
+        return redirect(url_for('admin_courses'))
     for enrollment in list(course.enrollments):
         LessonProgress.query.filter_by(enrollment_id=enrollment.id).delete()
         db.session.delete(enrollment)
@@ -874,6 +916,9 @@ def delete_company(company_id):
     if current_user.role != 'skillgrowth':
         return redirect(url_for('dashboard'))
     company = Company.query.get_or_404(company_id)
+    if company_has_records(company_id):
+        flash(DELETE_BLOCKED_MSG, 'danger')
+        return redirect(url_for('admin_companies'))
     User.query.filter_by(company_id=company_id).update({'company_id': None})
     db.session.delete(company)
     db.session.commit()
