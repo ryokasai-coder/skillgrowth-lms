@@ -155,6 +155,8 @@ class User(UserMixin, db.Model):
     # MFA（TOTP多要素認証・任意）
     mfa_secret = db.Column(db.String(32))
     mfa_enabled = db.Column(db.Boolean, default=False)
+    # 直前heartbeat時刻（ユーザー単位）。複数レッスン並行再生での視聴時間の二重計上を防ぐ
+    last_heartbeat_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     enrollments = db.relationship('Enrollment', backref='user', lazy=True)
 
@@ -1209,22 +1211,30 @@ def lesson_heartbeat(course_id, lesson_id):
         )
         db.session.add(progress)
 
+    prev_position = progress.last_position_seconds or 0
     progress.last_position_seconds = position_seconds
     # 未完了レッスンのみ視聴時間を加算（完了済みの再視聴では加算しない）
     now = datetime.utcnow()
+    # 直前heartbeatはユーザー単位で持つ（別レッスンを並行再生しても合計加算が実経過時間を超えないように）。
+    # 列追加前から続いているセッションはレッスン単位の値で代用する。
+    prev_hb = current_user.last_heartbeat_at or progress.last_heartbeat_at
     if not progress.is_completed:
         # 改ざん防止: クライアント申告ではなく「サーバ側の前回ハートビートからの実経過時間」で加算。
         # 連打しても実時間ぶんしか増えず、一時停止・タブ切替の中断ぶんも上限で頭打ちになる。
         HEARTBEAT_INTERVAL = 5   # クライアント送信間隔（秒）
         MAX_INCREMENT = 10       # 1ハートビートあたりの加算上限（中断からの復帰時のスパイクを抑止）
-        if progress.last_heartbeat_at is not None:
-            elapsed = (now - progress.last_heartbeat_at).total_seconds()
+        if prev_hb is not None:
+            elapsed = (now - prev_hb).total_seconds()
         else:
             elapsed = HEARTBEAT_INTERVAL  # 初回は想定間隔ぶんだけ加算
         increment = int(round(max(0, min(elapsed, MAX_INCREMENT))))
         # 一時停止・タブ切替からの再開時などに生じる加算誤差でも、
         # 「1レッスンの視聴時間」が動画全長を超えないよう上限を設ける。
         lesson = Lesson.query.filter_by(id=lesson_id, course_id=course_id).first()
+        # 動画レッスンは再生位置の前進量も上限にする（位置が進まない空打ちは加算0）。
+        # テキスト教材は位置を持たない（常に0を送る）ので滞在時間ベースのまま。
+        if lesson and lesson.video_url:
+            increment = min(increment, max(0, position_seconds - prev_position))
         cap = (lesson.duration_seconds or 0) if lesson else 0
         cur = progress.actual_watch_seconds or 0
         if cap > 0:
@@ -1232,6 +1242,7 @@ def lesson_heartbeat(course_id, lesson_id):
         progress.actual_watch_seconds = cur + increment
         enrollment.total_study_seconds = (enrollment.total_study_seconds or 0) + increment
     progress.last_heartbeat_at = now
+    current_user.last_heartbeat_at = now
     db.session.commit()
     return jsonify({'ok': True})
 

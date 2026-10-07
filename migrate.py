@@ -47,6 +47,11 @@ def migrate():
         c.execute('ALTER TABLE user ADD COLUMN mfa_enabled BOOLEAN DEFAULT 0')
         migrations.append('user.mfa_enabled')
 
+    # user: last_heartbeat_at（heartbeatの二重計上防止: ユーザー単位の直前heartbeat時刻）
+    if not column_exists(c, 'user', 'last_heartbeat_at'):
+        c.execute('ALTER TABLE user ADD COLUMN last_heartbeat_at DATETIME')
+        migrations.append('user.last_heartbeat_at')
+
     # course: sort_order（カリキュラム内の表示順）
     if not column_exists(c, 'course', 'sort_order'):
         c.execute('ALTER TABLE course ADD COLUMN sort_order INTEGER DEFAULT 0')
