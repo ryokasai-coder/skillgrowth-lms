@@ -54,8 +54,8 @@
         <tr>
           <td>{{ user.full_name or user.username }}</td>
           <td>{{ user.department or '-' }}</td>
-          <td>{{ enrollment.started_at.strftime('%Y/%m/%d') if enrollment.started_at else '-' }}</td>
-          <td>{{ enrollment.completed_at.strftime('%Y/%m/%d') if enrollment.completed_at else '-' }}</td>
+          <td>{{ enrollment.started_at|jst('%Y/%m/%d') }}</td>
+          <td>{{ enrollment.completed_at|jst('%Y/%m/%d') }}</td>
           <td>{{ ((enrollment.total_study_seconds or 0) // 3600) }}h{{ (((enrollment.total_study_seconds or 0) % 3600) // 60) }}m</td>
           <td>
             {% if enrollment.status == 'completed' %}

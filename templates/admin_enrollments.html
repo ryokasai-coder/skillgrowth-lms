@@ -84,7 +84,7 @@
                 <small class="text-muted">{{ user.department or '' }}</small>
               </td>
               <td><small>{{ course.title }}</small></td>
-              <td><small>{{ enrollment.enrolled_at.strftime('%Y/%m/%d') }}</small></td>
+              <td><small>{{ enrollment.enrolled_at|jst('%Y/%m/%d') }}</small></td>
               <td><small>{{ (enrollment.total_study_minutes / 60) | round(1) }}h</small></td>
               <td>
                 <small>{% if enrollment.quiz_score is not none %}{{ enrollment.quiz_score }}点{% else %}-{% endif %}</small>

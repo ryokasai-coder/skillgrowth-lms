@@ -45,8 +45,8 @@
           {% set m = ((enrollment.total_study_seconds or 0) % 3600) // 60 %}
           {% if h > 0 %}{{ h }}時間{{ m }}分{% else %}{{ m }}分{% endif %}
         </td>
-        <td>{{ enrollment.started_at.strftime('%Y/%m/%d') if enrollment.started_at else '-' }}</td>
-        <td>{{ enrollment.completed_at.strftime('%Y/%m/%d') if enrollment.completed_at else '-' }}</td>
+        <td>{{ enrollment.started_at|jst('%Y/%m/%d') }}</td>
+        <td>{{ enrollment.completed_at|jst('%Y/%m/%d') }}</td>
       </tr>
       {% endfor %}
     </tbody>

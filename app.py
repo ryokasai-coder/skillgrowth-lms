@@ -4,7 +4,7 @@ import csv
 import json
 import base64
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pyotp
 import qrcode
 from flask import (Flask, render_template, request, redirect, url_for,
@@ -44,6 +44,36 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('LMS_HTTPS') == '1'
 # ログイン画面の初期パスワードヒントは開発時のみ表示（公開サイトでは隠す）
 app.config['SHOW_LOGIN_HINT'] = os.environ.get('FLASK_DEBUG') == '1'
+
+# ===== 時刻の扱い =====
+# DBにはUTC(naive)で保存し、画面・CSV・PDFなど「人が見る/提出する」出力は必ずJST(UTC+9)に変換する。
+# サーバーのローカルTZに依存しないよう、datetime.now() は使わず jst_now() を使うこと。
+JST = timezone(timedelta(hours=9), 'JST')
+
+
+def to_jst(dt):
+    """DB上のUTC(naive)日時をJSTのdatetimeに変換する。Noneはそのまま返す。"""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(JST)
+
+
+def jst_now():
+    """現在時刻（JST）。ファイル名・発行日などサーバーTZ非依存で使う。"""
+    return datetime.now(JST)
+
+
+def format_jst(dt, fmt='%Y/%m/%d %H:%M:%S', empty='-'):
+    """UTC(naive)日時をJSTの文字列にする。Noneは empty を返す。"""
+    if dt is None:
+        return empty
+    return to_jst(dt).strftime(fmt)
+
+
+app.add_template_filter(format_jst, 'jst')
+
 
 @app.template_filter('fromjson')
 def fromjson_filter(s):
@@ -1356,7 +1386,7 @@ def export_csv(course_id):
                    .filter(Enrollment.course_id == course_id).all())
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['社員番号', '氏名', '部署', '雇用形態', '受講開始日', '受講完了日',
+    writer.writerow(['社員番号', '氏名', '部署', '雇用形態', '受講開始日(JST)', '受講完了日(JST)',
                      '実視聴時間（秒）', '実視聴時間（時間）', 'テスト得点', '受験回数', '修了状況'])
     for enrollment, user in enrollments:
         writer.writerow([
@@ -1364,8 +1394,8 @@ def export_csv(course_id):
             user.full_name or user.username,
             user.department or '',
             user.employment_type or '',
-            enrollment.started_at.strftime('%Y/%m/%d') if enrollment.started_at else '',
-            enrollment.completed_at.strftime('%Y/%m/%d') if enrollment.completed_at else '',
+            format_jst(enrollment.started_at, '%Y/%m/%d', ''),
+            format_jst(enrollment.completed_at, '%Y/%m/%d', ''),
             enrollment.total_study_seconds or 0,
             round((enrollment.total_study_seconds or 0) / 3600, 2),
             enrollment.quiz_score if enrollment.quiz_score is not None else '',
@@ -1458,7 +1488,7 @@ def export_full_logs_csv():
     writer = csv.writer(output)
     writer.writerow(['ログID', '社員番号', '氏名', '部署', '雇用形態',
                      'コース名', '訓練種別', 'レッスン名',
-                     '視聴開始日時', '視聴終了日時', '視聴時間（秒）', '視聴時間（時間）',
+                     '視聴開始日時(JST)', '視聴終了日時(JST)', '視聴時間（秒）', '視聴時間（時間）',
                      'IPアドレス'])
     for log, user, course, lesson in logs:
         writer.writerow([
@@ -1470,14 +1500,14 @@ def export_full_logs_csv():
             course.title,
             course.training_type,
             lesson.title if lesson else '',
-            log.login_at.strftime('%Y/%m/%d %H:%M:%S') if log.login_at else '',
-            log.logout_at.strftime('%Y/%m/%d %H:%M:%S') if log.logout_at else '',
+            format_jst(log.login_at, empty=''),
+            format_jst(log.logout_at, empty=''),
             log.duration_seconds or 0,
             round((log.duration_seconds or 0) / 3600, 4),
             log.ip_address or ''
         ])
     output.seek(0)
-    filename = f'受講ログ_{datetime.now().strftime("%Y%m%d")}.csv'
+    filename = f'受講ログ_{jst_now().strftime("%Y%m%d")}.csv'
     return send_file(
         io.BytesIO(output.getvalue().encode('utf-8-sig')),
         download_name=filename,
@@ -1502,7 +1532,7 @@ def export_login_sessions_csv():
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['ログID', '社員番号', '氏名', '部署',
-                     'ログイン日時', 'ログアウト日時', '滞在時間（秒）',
+                     'ログイン日時(JST)', 'ログアウト日時(JST)', '滞在時間（秒）',
                      '終了区分', 'IPアドレス'])
     reason_map = {'logout': '通常ログアウト', 'forced': '別端末ログインによる終了'}
     for s, user in sessions:
@@ -1515,14 +1545,14 @@ def export_login_sessions_csv():
             user.employee_id or '',
             user.full_name or user.username,
             user.department or '',
-            s.login_at.strftime('%Y/%m/%d %H:%M:%S') if s.login_at else '',
-            s.logout_at.strftime('%Y/%m/%d %H:%M:%S') if s.logout_at else '（未ログアウト）',
+            format_jst(s.login_at, empty=''),
+            format_jst(s.logout_at, empty='（未ログアウト）'),
             stay_seconds,
             reason_map.get(s.logout_reason, ''),
             s.ip_address or ''
         ])
     output.seek(0)
-    filename = f'ログイン証跡_{datetime.now().strftime("%Y%m%d")}.csv'
+    filename = f'ログイン証跡_{jst_now().strftime("%Y%m%d")}.csv'
     return send_file(
         io.BytesIO(output.getvalue().encode('utf-8-sig')),
         download_name=filename,
@@ -1794,8 +1824,8 @@ def generate_certificate_pdf(user, course, enrollment):
     story.append(Paragraph(f"規定訓練時間: {course.total_hours}時間", T('b4', fontSize=12, alignment=1, spaceAfter=4)))
     study_h = round((enrollment.total_study_seconds or 0) / 3600, 1)
     story.append(Paragraph(f"実際の視聴時間: {study_h}時間", T('b5', fontSize=12, alignment=1, spaceAfter=4)))
-    period = (f"{enrollment.started_at.strftime('%Y年%m月%d日') if enrollment.started_at else '-'}"
-              f" ～ {enrollment.completed_at.strftime('%Y年%m月%d日') if enrollment.completed_at else '-'}")
+    period = (f"{format_jst(enrollment.started_at, '%Y年%m月%d日')}"
+              f" ～ {format_jst(enrollment.completed_at, '%Y年%m月%d日')}")
     story.append(Paragraph(f"受講期間: {period}", T('b6', fontSize=12, alignment=1, spaceAfter=4)))
     if enrollment.quiz_score is not None:
         story.append(Paragraph(f"理解度テスト最高点: {enrollment.quiz_score}点", T('b7', fontSize=12, alignment=1, spaceAfter=16)))
@@ -1823,7 +1853,7 @@ def generate_training_record_pdf(course, enrollments):
     story.append(Paragraph(
         f"訓練名: {course.title}　訓練種別: {course.training_type}　"
         f"訓練時間: {course.total_hours}h　合格点: {course.pass_score}点　"
-        f"出力日: {datetime.now().strftime('%Y/%m/%d')}",
+        f"出力日: {jst_now().strftime('%Y/%m/%d')}",
         ParagraphStyle('meta', fontName=GOTHIC, fontSize=9)))
     story.append(Spacer(1, 4*mm))
 
@@ -1835,8 +1865,8 @@ def generate_training_record_pdf(course, enrollments):
             user.employee_id or '-',
             user.department or '-',
             user.employment_type or '-',
-            enrollment.started_at.strftime('%Y/%m/%d') if enrollment.started_at else '-',
-            enrollment.completed_at.strftime('%Y/%m/%d') if enrollment.completed_at else '-',
+            format_jst(enrollment.started_at, '%Y/%m/%d'),
+            format_jst(enrollment.completed_at, '%Y/%m/%d'),
             f"{round((enrollment.total_study_seconds or 0)/3600, 2)}",
             f"{enrollment.quiz_score}点" if enrollment.quiz_score is not None else '-',
             str(enrollment.quiz_attempts),

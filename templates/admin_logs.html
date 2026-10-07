@@ -87,8 +87,8 @@
             <td>{{ user.employee_id or '-' }}</td>
             <td>{{ course.title | truncate(20) }}</td>
             <td>{{ lesson.title | truncate(20) if lesson else '-' }}</td>
-            <td>{{ log.login_at.strftime('%Y/%m/%d %H:%M:%S') if log.login_at else '-' }}</td>
-            <td>{{ log.logout_at.strftime('%Y/%m/%d %H:%M:%S') if log.logout_at else '-' }}</td>
+            <td>{{ log.login_at|jst('%Y/%m/%d %H:%M:%S') }}</td>
+            <td>{{ log.logout_at|jst('%Y/%m/%d %H:%M:%S') }}</td>
             <td>
               {% set s = log.duration_seconds or 0 %}
               {% if s >= 3600 %}

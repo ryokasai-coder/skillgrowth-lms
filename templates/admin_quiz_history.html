@@ -35,7 +35,7 @@
         {% for attempt, user in attempts %}
         {% set answers = attempt.answers_json | fromjson if attempt.answers_json else {} %}
         <tr>
-          <td>{{ attempt.attempted_at.strftime('%Y/%m/%d %H:%M:%S') }}</td>
+          <td>{{ attempt.attempted_at|jst('%Y/%m/%d %H:%M:%S') }}</td>
           <td>{{ user.full_name or user.username }}</td>
           <td>{{ user.employee_id or '-' }}</td>
           <td>

@@ -36,7 +36,7 @@
           {% endfor %}
         </td>
         <td>{{ employees | length }}名</td>
-        <td>{{ company.created_at.strftime('%Y/%m/%d') }}</td>
+        <td>{{ company.created_at|jst('%Y/%m/%d') }}</td>
         <td>
           <div class="d-flex gap-1 flex-wrap">
             <a href="{{ url_for('admin_company_curricula', company_id=company.id) }}"

@@ -50,7 +50,7 @@
               <td>{{ user.full_name or user.username }}</td>
               <td>{{ course.title }}</td>
               <td>{{ log.duration_minutes }}分</td>
-              <td class="text-muted small">{{ log.login_at.strftime('%Y/%m/%d %H:%M') }}</td>
+              <td class="text-muted small">{{ log.login_at|jst('%Y/%m/%d %H:%M') }}</td>
             </tr>
             {% endfor %}
           </tbody>
