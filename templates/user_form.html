@@ -82,8 +82,17 @@
             <label class="form-label fw-semibold">
               パスワード {% if not user %}<span class="text-danger">*</span>{% else %}<span class="text-muted small">（変更する場合のみ入力）</span>{% endif %}
             </label>
-            <input type="password" name="password" class="form-control"
-                   {% if not user %}required{% endif %}>
+            <div class="input-group">
+              <input type="password" name="password" id="pwInput" class="form-control" minlength="8"
+                     autocomplete="new-password" {% if not user %}required{% endif %}>
+              <button type="button" class="btn btn-outline-primary" id="pwGenerate">
+                <i class="bi bi-magic me-1"></i>自動生成
+              </button>
+              <button type="button" class="btn btn-outline-secondary" id="pwCopy" disabled>
+                <i class="bi bi-clipboard me-1"></i>コピー
+              </button>
+            </div>
+            <div class="form-text" id="pwHelp">8文字以上。「自動生成」を押すと12文字のパスワードを作り、初回ログイン時の変更強制にもチェックを入れます。この画面を離れると再表示できないので、控えてから登録してください。</div>
           </div>
           <div class="mb-3 form-check">
             <input type="checkbox" name="force_pw" class="form-check-input" id="forcePw"
@@ -103,4 +112,36 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  // 紛らわしい文字（0/O, 1/l/I）を除いた英数字と記号から、ブラウザの暗号乱数で生成する
+  var CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  var SYMBOLS = '-_!#%+';
+  var input = document.getElementById('pwInput');
+  var copyBtn = document.getElementById('pwCopy');
+  function rand(n) {
+    var a = new Uint32Array(1);
+    window.crypto.getRandomValues(a);
+    return a[0] % n;
+  }
+  document.getElementById('pwGenerate').addEventListener('click', function () {
+    var pw = '';
+    for (var i = 0; i < 11; i++) pw += CHARS[rand(CHARS.length)];
+    var pos = rand(12);
+    pw = pw.slice(0, pos) + SYMBOLS[rand(SYMBOLS.length)] + pw.slice(pos);
+    input.type = 'text';
+    input.value = pw;
+    document.getElementById('forcePw').checked = true;
+    copyBtn.disabled = false;
+  });
+  copyBtn.addEventListener('click', function () {
+    navigator.clipboard.writeText(input.value).then(function () {
+      copyBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>コピーしました';
+    });
+  });
+})();
+</script>
 {% endblock %}
