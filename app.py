@@ -732,12 +732,16 @@ def delete_question(question_id):
 
 # ===== 受講者管理（管理者） =====
 
+# 管理画面から設定できるロール（skillgrowth = Skill Growth管理者）
+USER_ROLES = ('employee', 'company_admin', 'skillgrowth')
+
+
 @app.route('/admin/users')
 @login_required
 def admin_users():
     if current_user.role != 'skillgrowth':
         return redirect(url_for('dashboard'))
-    users = (User.query.filter(User.role.in_(['employee', 'company_admin']))
+    users = (User.query.filter(User.role.in_(['skillgrowth', 'employee', 'company_admin']))
              .order_by(User.full_name).all())
     companies = Company.query.order_by(Company.name).all()
     return render_template('admin_users.html', users=users, companies=companies)
@@ -754,11 +758,18 @@ def new_user():
         if request.form.get('hire_date'):
             hire_date = datetime.strptime(request.form['hire_date'], '%Y-%m-%d').date()
         role = request.form.get('role', 'employee')
-        if role not in ('employee', 'company_admin'):
+        if role not in USER_ROLES:
             role = 'employee'
+        if len(request.form.get('password', '')) < 8:
+            flash('パスワードは8文字以上で入力してください', 'danger')
+            return render_template('user_form.html', user=None, companies=companies)
         company_id = request.form.get('company_id') or None
         if company_id:
             company_id = int(company_id)
+        force_pw = 'force_pw' in request.form
+        if role == 'skillgrowth':
+            # 管理者は会社に属さず、初回ログイン時に本人がパスワードを変更する
+            company_id, force_pw = None, True
         user = User(
             username=request.form['username'],
             email=request.form['email'],
@@ -770,7 +781,7 @@ def new_user():
             hire_date=hire_date,
             role=role,
             company_id=company_id,
-            force_password_change='force_pw' in request.form
+            force_password_change=force_pw
         )
         db.session.add(user)
         db.session.commit()
@@ -799,8 +810,14 @@ def edit_user(user_id):
             company_id = int(company_id)
         user.company_id = company_id
         role = request.form.get('role', user.role)
-        if role in ('employee', 'company_admin'):
-            user.role = role
+        if role in USER_ROLES and role != user.role:
+            if user.id == current_user.id and user.role == 'skillgrowth':
+                # 自分自身の管理者権限は外せない（管理者が誰もいなくなる事故を防ぐ）
+                flash('自分自身の管理者権限は変更できません', 'danger')
+            else:
+                user.role = role
+        if user.role == 'skillgrowth':
+            user.company_id = None
         if request.form.get('password'):
             user.password_hash = generate_password_hash(request.form['password'])
             user.force_password_change = 'force_pw' in request.form

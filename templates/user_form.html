@@ -22,7 +22,9 @@
               <select name="role" class="form-select">
                 <option value="employee" {% if not user or user.role == 'employee' %}selected{% endif %}>受講者</option>
                 <option value="company_admin" {% if user and user.role == 'company_admin' %}selected{% endif %}>会社管理者</option>
+                <option value="skillgrowth" {% if user and user.role == 'skillgrowth' %}selected{% endif %}>Skill Growth管理者</option>
               </select>
+              <div class="form-text">Skill Growth管理者は全社のデータを扱えます。会社の指定は不要で、初回ログイン時にパスワード変更が必要です。</div>
             </div>
             <div class="col-md-6">
               <label class="form-label fw-semibold">所属会社</label>

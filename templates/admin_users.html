@@ -28,7 +28,9 @@
           <small class="text-muted">{{ user.email }}</small>
         </td>
         <td>
-          {% if user.role == 'company_admin' %}
+          {% if user.role == 'skillgrowth' %}
+          <span class="badge bg-primary">Skill Growth管理者</span>
+          {% elif user.role == 'company_admin' %}
           <span class="badge bg-success">会社管理者</span>
           {% else %}
           <span class="badge bg-secondary">受講者</span>
