@@ -839,7 +839,8 @@ def admin_enrollments():
                    .join(Course, Enrollment.course_id == Course.id)
                    .order_by(Enrollment.enrolled_at.desc()).all())
     users = User.query.filter_by(role='employee').all()
-    courses = Course.query.filter_by(is_published=True).order_by(Course.sort_order, Course.id).all()
+    courses = (Course.query.filter_by(is_published=True)
+               .order_by(Course.category, Course.sort_order, Course.id).all())
     # カリキュラム（category）一覧を表示順で
     curricula = []
     seen = set()
@@ -1549,7 +1550,7 @@ def admin_logs():
         query = query.filter(User.company_id == company_id)
     logs = query.order_by(StudyLog.login_at.desc()).limit(500).all()
 
-    courses = Course.query.order_by(Course.title).all()
+    courses = Course.query.order_by(Course.category, Course.sort_order, Course.id).all()
     uq = User.query.filter_by(role='employee')
     if company_id:
         uq = uq.filter_by(company_id=company_id)

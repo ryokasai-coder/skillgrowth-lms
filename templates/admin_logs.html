@@ -29,10 +29,14 @@
         <label class="form-label small fw-semibold">コースで絞り込み</label>
         <select name="course_id" class="form-select form-select-sm">
           <option value="">-- 全コース --</option>
-          {% for course in courses %}
-          <option value="{{ course.id }}" {% if selected_course == course.id %}selected{% endif %}>
-            {{ course.title }}
-          </option>
+          {% for category, group in courses | groupby('category') %}
+          <optgroup label="{{ category or '（研修名なし）' }}">
+            {% for course in group | sort(attribute='sort_order') %}
+            <option value="{{ course.id }}" {% if selected_course == course.id %}selected{% endif %}>
+              {{ course.title }}
+            </option>
+            {% endfor %}
+          </optgroup>
           {% endfor %}
         </select>
       </div>
@@ -97,7 +101,7 @@
             <td class="text-muted">{{ log.id }}</td>
             <td>{{ user.full_name or user.username }}</td>
             <td>{{ user.employee_id or '-' }}</td>
-            <td>{{ course.title | truncate(20) }}</td>
+            <td>{{ course.title | truncate(20) }}<br><small class="text-muted">{{ course.category or '' }}</small></td>
             <td>{{ lesson.title | truncate(20) if lesson else '-' }}</td>
             <td>{{ log.login_at|jst('%Y/%m/%d %H:%M:%S') }}</td>
             <td>{{ log.logout_at|jst('%Y/%m/%d %H:%M:%S') }}</td>
