@@ -5,9 +5,9 @@ CSV（UTF-8, ヘッダ付き。Excel保存のBOMも許容）の列:
     email           メール（必須・ユニーク）
     password        初期パスワード（新規作成時のみ使用。既存ユーザーには影響しない）
     full_name       氏名（必須）
-    employee_id     社員番号（任意・助成金の証憑用）
-    department      部署（任意・証憑用）
-    employment_type 雇用形態（任意・証憑用。例: 正社員/パート）
+    employee_id     社員番号（任意）
+    department      部署（任意）
+    employment_type 雇用形態（任意。例: 正社員/パート）
     hire_date       入社日（任意・YYYY-MM-DD）
     company         所属会社名（任意。無ければ未所属。get-or-createで会社も作成）
     curriculum      受講させるカリキュラム名（任意。Course.category と一致。

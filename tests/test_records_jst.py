@@ -1,4 +1,4 @@
-"""監査対応ステップ1-1: 保存はUTC、表示・出力はJST(UTC+9)に統一。"""
+"""保存はUTC、表示・出力はJST(UTC+9)に統一。"""
 from datetime import datetime
 
 from conftest import login

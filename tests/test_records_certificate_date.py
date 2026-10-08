@@ -1,4 +1,4 @@
-"""監査対応ステップ1-5: 修了証の発行日・修了日は「修了日時(JST)」に固定（再発行しても変わらない）。"""
+"""修了証の発行日・修了日は「修了日時(JST)」に固定（再発行しても変わらない）。"""
 from datetime import datetime
 
 import app as appmod

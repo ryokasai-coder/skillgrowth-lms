@@ -1,4 +1,4 @@
-"""監査対応ステップ1: 視聴時間は「サーバ実測」のみ（申告値の上乗せ廃止）。"""
+"""視聴時間は「サーバ実測」のみ（申告値の上乗せ廃止）。"""
 from conftest import login, set_watched
 from app import app as flask_app, db, LessonProgress, StudyLog, Enrollment
 

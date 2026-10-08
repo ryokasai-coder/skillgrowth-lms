@@ -6,12 +6,12 @@
 
 実行:  python fix_watch_seconds.py
 """
-# 誤実行防止ガード（監査証憑を消す/書き換えるスクリプト）: 環境変数と対話確認の両方が無ければ何もしない。
+# 誤実行防止ガード（受講記録を消す/書き換えるスクリプト）: 環境変数と対話確認の両方が無ければ何もしない。
 import os
 import sys
 if os.environ.get('LMS_ALLOW_DESTRUCTIVE') != '1':
     sys.exit('中止: 受講記録を変更する危険なスクリプトです。実行するには環境変数 LMS_ALLOW_DESTRUCTIVE=1 が必要です。')
-if input('受講記録（監査証憑）を変更します。続行するには DELETE と入力してください: ').strip() != 'DELETE':
+if input('受講記録を変更します。続行するには DELETE と入力してください: ').strip() != 'DELETE':
     sys.exit('中止: 確認入力が一致しません。何も変更していません。')
 
 from app import app, db, LessonProgress, StudyLog, Enrollment, Lesson

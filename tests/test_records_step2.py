@@ -1,4 +1,4 @@
-"""監査対応ステップ2: LMS情報の写し / 受講時間10時間以上の者の一覧表 / 既存出力の事業所フィルタ。"""
+"""帳票出力: 受講記録一覧 / 受講者別 学習時間の集計 / 既存出力の事業所フィルタ。"""
 import csv
 import io
 from datetime import datetime
@@ -92,22 +92,67 @@ def _world():
                 'c1': c1.id, 'c2': c2.id}
 
 
-# ---------- 10時間以上の者の一覧表 ----------
+# ---------- 受講者別 学習時間の集計 ----------
 
-def test_ten_hours_picks_course_where_cumulative_crosses_10h(client):
+SH = '/reports/study-hours'
+OLD = 'au' + 'dit'  # 旧URLの接頭辞
+
+
+def test_study_hours_min10_picks_course_where_cumulative_crosses_10h(client):
     w = _world()
     login(client, 'sg')
-    r = client.get(f'/audit/ten-hours/csv?company_id={w["a"]}')
+    r = client.get(f'{SH}/csv?company_id={w["a"]}&min_hours=10')
     assert r.status_code == 200
     rows = _bom_rows(r)
-    names = [row[2] for row in rows[1:]]
-    assert names == ['甲野太郎']          # 9h59m の乙山は載らない・他社の丙川も載らない
+    assert rows[0] == ['事業所名', '社員番号', '氏名', '修了講座数',
+                       '修了講座の学習時間合計', '研修名', '10時間に達した日(JST)']
+    assert [row[2] for row in rows[1:]] == ['甲野太郎']   # 9h59m の乙山・他社の丙川は載らない
     row = rows[1]
-    assert row[3] == '2026/10/08'          # 累積10hを超えた第3章の修了日(JST)
-    assert row[4] == '11:00:00'            # 修了講座の標準学習時間合計
+    assert row[0] == 'A商事' and row[1] == 'A001'
+    assert row[3] == '3'
+    assert row[4] == '11:00:00'
+    assert row[5] == '定額研修'
+    assert row[6] == '2026/10/08'          # 累積10hを超えた第3章の修了日(JST)
 
 
-def test_ten_hours_exactly_10h_counts(client):
+def test_study_hours_no_min_lists_everyone_in_company(client):
+    w = _world()
+    login(client, 'sg')
+    rows = _bom_rows(client.get(f'{SH}/csv?company_id={w["a"]}'))
+    assert len(rows[0]) == 6                # 到達日列なし
+    assert {r[2] for r in rows[1:]} == {'甲野太郎', '乙山花子'}
+    by = {r[2]: r for r in rows[1:]}
+    assert by['乙山花子'][3] == '2' and by['乙山花子'][4] == '9:59:00'
+
+
+def test_study_hours_zero_completion_included_without_min(client):
+    with flask_app.app_context():
+        a = Company(name='A商事')
+        db.session.add(a)
+        db.session.flush()
+        _mk_user('sg', 'skillgrowth')
+        _mk_user('p', company=a, name='未着手', emp_id='1')
+        db.session.commit()
+        cid = a.id
+    login(client, 'sg')
+    rows = _bom_rows(client.get(f'{SH}/csv?company_id={cid}'))
+    assert len(rows) == 2 and rows[1][3] == '0' and rows[1][4] == '0:00:00'
+    assert len(_bom_rows(client.get(f'{SH}/csv?company_id={cid}&min_hours=1'))) == 1
+
+
+def test_study_hours_min5_boundary(client):
+    w = _world()
+    login(client, 'sg')
+    rows = _bom_rows(client.get(f'{SH}/csv?company_id={w["a"]}&min_hours=5'))
+    assert {r[2] for r in rows[1:]} == {'甲野太郎', '乙山花子'}
+    by = {r[2]: r for r in rows[1:]}
+    assert by['甲野太郎'][6] == '2026/09/01'   # 第1章(6h)で5hに到達
+    assert by['乙山花子'][6] == '2026/09/02'
+    rows = _bom_rows(client.get(f'{SH}/csv?company_id={w["a"]}&min_hours=15'))
+    assert len(rows) == 1
+
+
+def test_study_hours_exactly_10h_counts(client):
     with flask_app.app_context():
         a = Company(name='A商事')
         db.session.add(a)
@@ -121,11 +166,11 @@ def test_ten_hours_exactly_10h_counts(client):
         db.session.commit()
         cid = a.id
     login(client, 'sg')
-    rows = _bom_rows(client.get(f'/audit/ten-hours/csv?company_id={cid}'))
-    assert len(rows) == 2 and rows[1][3] == '2026/09/02'
+    rows = _bom_rows(client.get(f'{SH}/csv?company_id={cid}&min_hours=10'))
+    assert len(rows) == 2 and rows[1][6] == '2026/09/02'
 
 
-def test_ten_hours_incomplete_courses_not_counted(client):
+def test_study_hours_incomplete_courses_not_counted(client):
     with flask_app.app_context():
         a = Company(name='A商事')
         db.session.add(a)
@@ -137,34 +182,69 @@ def test_ten_hours_incomplete_courses_not_counted(client):
         db.session.commit()
         cid = a.id
     login(client, 'sg')
-    rows = _bom_rows(client.get(f'/audit/ten-hours/csv?company_id={cid}'))
-    assert len(rows) == 1  # ヘッダのみ
+    assert len(_bom_rows(client.get(f'{SH}/csv?company_id={cid}&min_hours=10'))) == 1
+    rows = _bom_rows(client.get(f'{SH}/csv?company_id={cid}'))
+    assert rows[1][3] == '0' and rows[1][4] == '0:00:00'
 
 
-def test_ten_hours_period_filter(client):
+def test_study_hours_period_filter(client):
     w = _world()
     login(client, 'sg')
-    base = f'/audit/ten-hours/csv?company_id={w["a"]}'
+    base = f'{SH}/csv?company_id={w["a"]}&min_hours=10'
     assert len(_bom_rows(client.get(base + '&from=2026-09-01&to=2026-10-31'))) == 2
-    # 契約期間外（10/01より前）の修了は累積しない → 10月の修了だけでは誰も10時間に届かない
-    assert len(_bom_rows(client.get(base + '&from=2026-10-01'))) == 1   # ヘッダーのみ
+    # 期間外の修了は累積しない → 10月の修了だけでは誰も10時間に届かない
+    assert len(_bom_rows(client.get(base + '&from=2026-10-01'))) == 1
     # to=10/07 だと 10/08(JST) の修了は対象外 → 到達していない
     assert len(_bom_rows(client.get(base + '&to=2026-10-07'))) == 1
 
 
-def test_ten_hours_requires_company_for_skillgrowth(client):
+def test_study_hours_all_companies_for_skillgrowth(client):
     _world()
     login(client, 'sg')
-    assert client.get('/audit/ten-hours/csv').status_code == 400
+    rows = _bom_rows(client.get(f'{SH}/csv'))
+    assert {r[0] for r in rows[1:]} == {'A商事', 'B工業'}
 
 
-def test_ten_hours_pdf(client):
+def test_study_hours_bad_min_hours_400(client):
     w = _world()
     login(client, 'sg')
-    r = client.get(f'/audit/ten-hours/pdf?company_id={w["a"]}')
+    for v in ('2', '0', '-1', 'abc', '10.5', '20'):
+        assert client.get(f'{SH}/csv?company_id={w["a"]}&min_hours={v}').status_code == 400
+        assert client.get(f'{SH}/pdf?company_id={w["a"]}&min_hours={v}').status_code == 400
+
+
+def test_study_hours_pdf(client):
+    w = _world()
+    login(client, 'sg')
+    r = client.get(f'{SH}/pdf?company_id={w["a"]}&min_hours=5')
     assert r.status_code == 200
     assert r.data[:4] == b'%PDF'
     assert r.mimetype == 'application/pdf'
+
+
+def test_study_hours_pdf_has_no_certification_wording(client):
+    from app import generate_study_hours_pdf
+    with flask_app.app_context():
+        pdf = generate_study_hours_pdf('A商事', [{
+            'company': 'A商事', 'employee_id': '1', 'name': '甲野', 'course_count': 1,
+            'total_sec': 3600, 'curricula': ['研修'], 'reached_at': None}],
+            period_label='', min_hours=None)
+        data = pdf.read()
+    assert data[:4] == b'%PDF'
+    try:
+        import pypdf
+    except ImportError:
+        return
+    text = ''.join(pg.extract_text() or '' for pg in pypdf.PdfReader(io.BytesIO(data)).pages)
+    for bad in ('証明', '定額' + '制', '助成' + '金'):
+        assert bad not in text
+
+
+def test_old_urls_are_404(client):
+    w = _world()
+    login(client, 'sg')
+    for path in ('ten-hours/csv', 'ten-hours/pdf', 'lms-copy/csv', 'lms-copy/pdf'):
+        assert client.get(f'/{OLD}/{path}?company_id={w["a"]}').status_code == 404
 
 
 # ---------- 権限 ----------
@@ -172,26 +252,28 @@ def test_ten_hours_pdf(client):
 def test_company_admin_own_company_default_and_forbidden_other(client):
     w = _world()
     login(client, 'caa')
-    rows = _bom_rows(client.get('/audit/ten-hours/csv'))   # company_id 省略 → 自社
+    rows = _bom_rows(client.get('/reports/study-hours/csv?min_hours=10'))   # company_id 省略 → 自社
     assert [r[2] for r in rows[1:]] == ['甲野太郎']
-    assert client.get(f'/audit/ten-hours/csv?company_id={w["a"]}').status_code == 200
-    for path in ('ten-hours/csv', 'ten-hours/pdf', 'lms-copy/csv', 'lms-copy/pdf'):
-        assert client.get(f'/audit/{path}?company_id={w["b"]}').status_code == 403
+    rows = _bom_rows(client.get('/reports/study-hours/csv'))   # 他社の丙川は混ざらない
+    assert {r[0] for r in rows[1:]} == {'A商事'}
+    assert client.get(f'/reports/study-hours/csv?company_id={w["a"]}').status_code == 200
+    for path in ('study-hours/csv', 'study-hours/pdf', 'records/csv', 'records/pdf'):
+        assert client.get(f'/reports/{path}?company_id={w["b"]}').status_code == 403
     # 他社の受講者を user_id で指定しても不可
-    assert client.get(f'/audit/lms-copy/csv?user_id={w["pb"]}').status_code == 403
+    assert client.get(f'/reports/records/csv?user_id={w["pb"]}').status_code == 403
 
 
 def test_employee_forbidden_and_anonymous_redirect(client):
     w = _world()
-    assert client.get(f'/audit/lms-copy/csv?company_id={w["a"]}').status_code in (302, 401)
+    assert client.get(f'/reports/records/csv?company_id={w["a"]}').status_code in (302, 401)
     login(client, 'pa')
-    assert client.get(f'/audit/lms-copy/csv?company_id={w["a"]}').status_code == 403
-    assert client.get(f'/audit/ten-hours/pdf?company_id={w["a"]}').status_code == 403
+    assert client.get(f'/reports/records/csv?company_id={w["a"]}').status_code == 403
+    assert client.get(f'/reports/study-hours/pdf?company_id={w["a"]}').status_code == 403
 
 
-# ---------- LMS情報の写し ----------
+# ---------- 受講記録一覧 ----------
 
-def test_lms_copy_csv_rows_jst_progress(client):
+def test_records_csv_rows_jst_progress(client):
     with flask_app.app_context():
         a = Company(name='A商事')
         db.session.add(a)
@@ -213,7 +295,7 @@ def test_lms_copy_csv_rows_jst_progress(client):
         db.session.commit()
         cid = a.id
     login(client, 'sg')
-    r = client.get(f'/audit/lms-copy/csv?company_id={cid}')
+    r = client.get(f'/reports/records/csv?company_id={cid}')
     assert r.status_code == 200
     assert r.data[:3] == b'\xef\xbb\xbf'
     rows = _bom_rows(r)
@@ -233,39 +315,39 @@ def test_lms_copy_csv_rows_jst_progress(client):
     assert second[10] == ''                         # 未修了は空
 
 
-def test_lms_copy_no_other_company_and_user_filter(client):
+def test_records_no_other_company_and_user_filter(client):
     w = _world()
     login(client, 'sg')
-    rows = _bom_rows(client.get(f'/audit/lms-copy/csv?company_id={w["a"]}'))
+    rows = _bom_rows(client.get(f'/reports/records/csv?company_id={w["a"]}'))
     assert {r[0] for r in rows[1:]} == {'A商事'}
     assert {r[2] for r in rows[1:]} == {'甲野太郎', '乙山花子'}
-    rows = _bom_rows(client.get(f'/audit/lms-copy/csv?company_id={w["a"]}&user_id={w["pa"]}'))
+    rows = _bom_rows(client.get(f'/reports/records/csv?company_id={w["a"]}&user_id={w["pa"]}'))
     assert {r[2] for r in rows[1:]} == {'甲野太郎'}
     # 会社と受講者の不一致 -> 他社の個人情報は出ない
-    rows = _bom_rows(client.get(f'/audit/lms-copy/csv?company_id={w["a"]}&user_id={w["pb"]}'))
+    rows = _bom_rows(client.get(f'/reports/records/csv?company_id={w["a"]}&user_id={w["pb"]}'))
     assert len(rows) == 1
 
 
-def test_lms_copy_period_filter(client):
+def test_records_period_filter(client):
     w = _world()
     login(client, 'sg')
     rows = _bom_rows(client.get(
-        f'/audit/lms-copy/csv?company_id={w["a"]}&user_id={w["pa"]}&from=2026-10-01&to=2026-10-31'))
+        f'/reports/records/csv?company_id={w["a"]}&user_id={w["pa"]}&from=2026-10-01&to=2026-10-31'))
     assert [r[4] for r in rows[1:]] == ['第3章']
 
 
-def test_lms_copy_pdf_and_bad_date(client):
+def test_records_pdf_and_bad_date(client):
     w = _world()
     login(client, 'sg')
-    r = client.get(f'/audit/lms-copy/pdf?company_id={w["a"]}')
+    r = client.get(f'/reports/records/pdf?company_id={w["a"]}')
     assert r.status_code == 200 and r.data[:4] == b'%PDF'
-    assert client.get('/audit/lms-copy/csv?from=2026-13-99').status_code == 400
+    assert client.get('/reports/records/csv?from=2026-13-99').status_code == 400
 
 
-def test_company_admin_lms_copy_pdf_own(client):
+def test_company_admin_records_pdf_own(client):
     _world()
     login(client, 'caa')
-    r = client.get('/audit/lms-copy/pdf')
+    r = client.get('/reports/records/pdf')
     assert r.status_code == 200 and r.data[:4] == b'%PDF'
 
 
@@ -294,13 +376,14 @@ def test_existing_exports_company_filter(client):
 
 # ---------- 画面 ----------
 
-def test_ui_has_audit_forms(client):
+def test_ui_has_report_forms(client):
     _world()
     login(client, 'sg')
     html = client.get('/admin/logs').data.decode()
-    assert '/audit/lms-copy/csv' in html and '/audit/ten-hours/pdf' in html
+    assert '/reports/records/csv' in html and '/reports/study-hours/pdf' in html
+    assert 'name="min_hours"' in html and '受講記録一覧' in html
     assert 'name="company_id"' in html
     client.get('/logout')
     login(client, 'caa')
     html = client.get('/ca/reports').data.decode()
-    assert '/audit/lms-copy/pdf' in html and '/audit/ten-hours/csv' in html
+    assert '/reports/records/pdf' in html and '/reports/study-hours/csv' in html

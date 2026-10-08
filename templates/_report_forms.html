@@ -1,0 +1,64 @@
+{# 受講記録の出力フォーム。要: report_users（絞り込み候補）、report_companies（skillgrowthのみ。会社管理者は空＝自社固定） #}
+<div class="card mb-3 border-primary">
+  <div class="card-header bg-primary-subtle fw-semibold small">
+    <i class="bi bi-file-earmark-check me-1"></i>受講記録の出力
+  </div>
+  <div class="card-body">
+    <form method="GET" class="row g-2 align-items-end">
+      {% if report_companies %}
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">事業所（会社）</label>
+        <select name="company_id" class="form-select form-select-sm">
+          <option value="">-- 全事業所 --</option>
+          {% for co in report_companies %}
+          <option value="{{ co.id }}" {% if selected_company == co.id %}selected{% endif %}>{{ co.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">受講者（受講記録一覧のみ・任意）</label>
+        <select name="user_id" class="form-select form-select-sm">
+          <option value="">-- 全員 --</option>
+          {% for u in report_users %}
+          <option value="{{ u.id }}">{{ u.full_name or u.username }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold">期間 開始（JST・任意）</label>
+        <input type="date" name="from" class="form-control form-control-sm">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold">期間 終了（JST・任意）</label>
+        <input type="date" name="to" class="form-control form-control-sm">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold">絞り込み（学習時間の集計のみ）</label>
+        <select name="min_hours" class="form-select form-select-sm">
+          <option value="">指定なし</option>
+          {% for h in (1, 3, 5, 10, 15) %}
+          <option value="{{ h }}">{{ h }}時間以上</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 d-flex flex-wrap gap-2 mt-2">
+        <button type="submit" formaction="{{ url_for('export_records_csv') }}" class="btn btn-success btn-sm">
+          <i class="bi bi-file-earmark-spreadsheet me-1"></i>受講記録一覧 CSV
+        </button>
+        <button type="submit" formaction="{{ url_for('export_records_pdf') }}" class="btn btn-danger btn-sm">
+          <i class="bi bi-file-earmark-pdf me-1"></i>受講記録一覧 PDF
+        </button>
+        <button type="submit" formaction="{{ url_for('export_study_hours_csv') }}" class="btn btn-outline-success btn-sm">
+          <i class="bi bi-file-earmark-spreadsheet me-1"></i>学習時間の集計 CSV
+        </button>
+        <button type="submit" formaction="{{ url_for('export_study_hours_pdf') }}" class="btn btn-outline-danger btn-sm">
+          <i class="bi bi-file-earmark-pdf me-1"></i>学習時間の集計 PDF
+        </button>
+      </div>
+      <div class="col-12 small text-muted">
+        学習時間は、修了した講座の標準学習時間（動画の長さの合計）を修了日順に合計したものです。期間を指定した場合は、その期間内に修了した講座だけを合計します。
+      </div>
+    </form>
+  </div>
+</div>

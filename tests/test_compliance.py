@@ -1,4 +1,4 @@
-"""助成金対応の要点機能に対する回帰テスト。
+"""受講記録の要点機能に対する回帰テスト。
 
 - 未視聴制御（サーバ側の解放判定・完了API 403・heartbeat 403）
 - 受講時間の水増し防止（heartbeat連打）
@@ -71,7 +71,7 @@ def test_heartbeat_burst_does_not_inflate(client, seed_course):
 
 
 def test_complete_ignores_client_watch_seconds(client, seed_course):
-    """監査対応: クライアント申告の watch_seconds では実測値を上書き・上乗せしない。"""
+    """クライアント申告の watch_seconds では実測値を上書き・上乗せしない。"""
     cid = seed_course['course_id']
     l1 = seed_course['lesson_ids'][0]  # duration_seconds=600
     login(client)
