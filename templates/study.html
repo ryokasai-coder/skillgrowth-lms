@@ -176,7 +176,7 @@
         <div class="alert alert-info small py-2 mb-3" id="watch-notice">
           <i class="bi bi-play-circle me-1"></i>
           動画を最後まで視聴するとレッスンが自動完了します。
-          シーク（早送り）・1.5倍速超・タブ切り替えは制限されます。
+          早送り・倍速再生はできません。タブを切り替えると一時停止します。
         </div>
         {% endif %}
         {% endif %}
@@ -527,7 +527,7 @@ function startSpeedPoll() {
     const rate = player.getPlaybackRate();
     if (rate > MAX_SPEED) {
       player.setPlaybackRate(1.0);
-      showNotice(`再生速度は${MAX_SPEED}倍速までです。通常速度に戻しました。`);
+      showNotice('倍速再生はできません。通常速度に戻しました。');
     }
   }, 1000);
 }
